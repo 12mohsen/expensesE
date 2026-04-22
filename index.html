@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>نفقات – إدارة مصاريف المنزل</title>
+  <meta name="description" content="سجّل مصاريف منزلك بسهولة: تنظيف، سيارة، تحميل، وكل شيء بينهما." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📒</text></svg>" />
+</head>
+<body>
+  <!-- خلفيات متحركة -->
+  <div class="bg-blobs" aria-hidden="true">
+    <span class="blob b1"></span>
+    <span class="blob b2"></span>
+    <span class="blob b3"></span>
+  </div>
+
+  <!-- ================= شاشة المصادقة ================= -->
+  <section id="auth-screen" class="auth-screen">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="logo">📒</div>
+        <h1>نفقات</h1>
+        <p class="tagline">سجّل مصاريف منزلك بسهولة: تنظيف، سيارة، تحميل، وكل شيء بينهما.</p>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="login">تسجيل الدخول</button>
+        <button class="tab" data-tab="register">حساب جديد</button>
+        <button class="tab" data-tab="hint">نسيت كلمة السر؟</button>
+      </div>
+
+      <!-- تسجيل الدخول -->
+      <form id="login-form" class="auth-form active" autocomplete="off">
+        <label>
+          <span>اسم المستخدم</span>
+          <input type="text" name="username" required placeholder="مثال: ahmad" />
+        </label>
+        <label>
+          <span>كلمة السر</span>
+          <div class="pwd-wrap">
+            <input type="password" name="password" required placeholder="••••••••" />
+            <button type="button" class="toggle-pwd" aria-label="إظهار/إخفاء">👁️</button>
+          </div>
+        </label>
+        <label class="checkbox-wrap">
+          <input type="checkbox" name="remember" checked />
+          <span>تذكرني (البقاء متصلاً)</span>
+        </label>
+        <button type="submit" class="btn primary">دخول</button>
+        <p class="form-msg" aria-live="polite"></p>
+      </form>
+
+      <!-- تسجيل حساب جديد -->
+      <form id="register-form" class="auth-form" autocomplete="off">
+        <label>
+          <span>اسم المستخدم</span>
+          <input type="text" name="username" required minlength="3" placeholder="3 أحرف على الأقل" />
+        </label>
+        <label>
+          <span>كلمة السر</span>
+          <div class="pwd-wrap">
+            <input type="password" name="password" required minlength="4" placeholder="4 أحرف على الأقل" />
+            <button type="button" class="toggle-pwd" aria-label="إظهار/إخفاء">👁️</button>
+          </div>
+        </label>
+        <label>
+          <span>تأكيد كلمة السر</span>
+          <input type="password" name="password2" required minlength="4" placeholder="أعد كتابة كلمة السر" />
+        </label>
+        <label>
+          <span>تلميح لكلمة السر</span>
+          <input type="text" name="hint" required placeholder="مثال: اسم قطتي الأولى" />
+          <small class="help">سيساعدك هذا التلميح على تذكّر كلمة السر لاحقاً.</small>
+        </label>
+        <button type="submit" class="btn primary">إنشاء الحساب</button>
+        <p class="form-msg" aria-live="polite"></p>
+      </form>
+
+      <!-- التلميح -->
+      <form id="hint-form" class="auth-form" autocomplete="off">
+        <label>
+          <span>اسم المستخدم</span>
+          <input type="text" name="username" required placeholder="اكتب اسم المستخدم لعرض التلميح" />
+        </label>
+        <button type="submit" class="btn secondary">عرض التلميح</button>
+        <p class="form-msg" aria-live="polite"></p>
+      </form>
+
+      <footer class="auth-foot">
+        <small>البيانات محفوظة في السحابة 🔒</small>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ================= التطبيق الرئيسي ================= -->
+  <section id="app-screen" class="app-screen hidden">
+    <header class="app-header">
+      <div class="header-inner">
+        <div class="header-brand">
+          <span class="logo-sm">📒</span>
+          <div>
+            <h2>نفقات</h2>
+            <small>مرحباً، <b id="user-label">—</b></small>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="theme-toggle" class="icon-btn" title="الوضع الليلي/النهاري">🌙</button>
+          <button id="export-btn" class="icon-btn" title="تصدير البيانات">⬇️</button>
+          <button id="logout-btn" class="btn ghost">خروج</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- بطاقات الملخص -->
+      <div class="stats">
+        <div class="stat-card">
+          <span class="stat-icon">💰</span>
+          <div>
+            <small>إجمالي مصاريف هذا الشهر</small>
+            <strong id="stat-month">0</strong>
+          </div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-icon">📆</span>
+          <div>
+            <small>الإجمالي الكلي</small>
+            <strong id="stat-total">0</strong>
+          </div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-icon">🧾</span>
+          <div>
+            <small>عدد العمليات</small>
+            <strong id="stat-count">0</strong>
+          </div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-icon">🏆</span>
+          <div>
+            <small>أعلى تصنيف</small>
+            <strong id="stat-top">—</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <!-- نموذج الإضافة -->
+        <section class="panel">
+          <h3>➕ إضافة مصروف</h3>
+          <form id="expense-form" autocomplete="off">
+            <div class="row">
+              <label>
+                <span>الوصف</span>
+                <input type="text" name="title" required placeholder="مثال: بنزين السيارة" />
+              </label>
+              <label>
+                <span>المبلغ</span>
+                <input type="number" name="amount" required min="0" step="0.01" placeholder="0.00" lang="en" inputmode="decimal" />
+              </label>
+            </div>
+            <div class="row">
+              <label>
+                <span>التصنيف</span>
+                <select name="category" id="cat-select" required>
+                  <option value="تنظيف">🧹 تنظيف</option>
+                  <option value="سيارة">🚗 سيارة</option>
+                  <option value="تحميل">📦 تحميل</option>
+                  <option value="طعام">🍽️ طعام</option>
+                  <option value="فواتير">💡 فواتير</option>
+                  <option value="صحة">💊 صحة</option>
+                  <option value="تعليم">📚 تعليم</option>
+                  <option value="ترفيه">🎮 ترفيه</option>
+                  <option value="__custom__">➕ إضافة تصنيف جديد...</option>
+                </select>
+                <input type="text" name="custom_category" id="custom-cat" placeholder="اكتب التصنيف الجديد..." style="display:none;margin-top:8px;" />
+              </label>
+              <label>
+                <span>التاريخ</span>
+                <input type="date" name="date" required />
+              </label>
+            </div>
+            <label>
+              <span>ملاحظات (اختياري)</span>
+              <textarea name="note" rows="2" placeholder="تفاصيل إضافية..."></textarea>
+            </label>
+            <button type="submit" class="btn primary block">حفظ المصروف</button>
+          </form>
+        </section>
+
+        <!-- الملخص حسب التصنيف -->
+        <section class="panel">
+          <h3>📊 التوزيع حسب التصنيف</h3>
+          <div class="chart-scroll">
+            <div id="cat-chart" class="cat-chart">
+              <p class="empty">لا توجد بيانات بعد.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- قائمة المصاريف -->
+      <section class="panel">
+        <div class="panel-head">
+          <h3>🧾 سجل المصاريف</h3>
+          <div class="filters">
+            <input type="search" id="search" placeholder="بحث..." />
+            <select id="filter-cat">
+              <option value="">كل التصنيفات</option>
+            </select>
+            <span id="cat-sum" class="cat-sum" style="display:none;">المجموع: <b>0</b></span>
+            <button id="trash-btn" class="btn ghost small" title="سلة المحذوفات">🗑️ المحذوفات <span id="trash-count" class="badge" style="display:none;">0</span></button>
+            <button id="clear-all" class="btn danger small">حذف الكل</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="expense-table">
+            <thead>
+              <tr>
+                <th>التاريخ</th>
+                <th>الوصف</th>
+                <th>التصنيف</th>
+                <th>المبلغ</th>
+                <th>ملاحظات</th>
+                <th>إجراءات</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p id="empty-row" class="empty">لم تسجّل أي مصروف بعد. ابدأ بإضافة أول مصروف 👆</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-foot">
+      <small>© نفقات — صُمّم بحب ❤️ لإدارة مصاريفك .</small>
+      <br>
+      <small style="opacity:0.8;">mohsen</small>
+    </footer>
+  </section>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <!-- سلة المحذوفات -->
+  <div id="trash-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>🗑️ سلة المحذوفات</h3>
+        <button class="icon-btn" id="trash-close" aria-label="إغلاق">✖</button>
+      </div>
+      <p class="muted">يتم حذف العناصر نهائياً بعد <b>30 يوماً</b> من تاريخ الحذف.</p>
+      <div class="trash-wrap">
+        <table id="trash-table">
+          <thead>
+            <tr>
+              <th>التاريخ</th>
+              <th>الوصف</th>
+              <th>التصنيف</th>
+              <th>المبلغ</th>
+              <th>متبقي</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p id="trash-empty" class="empty">سلة المحذوفات فارغة ✨</p>
+      </div>
+      <div class="modal-foot">
+        <button id="trash-purge" class="btn danger small">إفراغ السلة</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
