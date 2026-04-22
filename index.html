@@ -110,6 +110,7 @@
           </div>
         </div>
         <div class="header-actions">
+          <button id="share-btn" class="icon-btn" title="مشاركة التطبيق">🔗</button>
           <button id="theme-toggle" class="icon-btn" title="الوضع الليلي/النهاري">🌙</button>
           <button id="export-btn" class="icon-btn" title="تصدير البيانات">⬇️</button>
           <button id="logout-btn" class="btn ghost">خروج</button>
@@ -118,6 +119,23 @@
     </header>
 
     <main class="container">
+      <!-- حقل الميزانية -->
+      <div class="budget-bar">
+        <div class="budget-input-wrap">
+          <label for="budget-input">💵 الميزانية (اختياري):</label>
+          <input type="number" id="budget-input" min="0" step="0.01" placeholder="أدخل الميزانية..." lang="en" inputmode="decimal" />
+          <button id="budget-save" class="btn primary small">حفظ</button>
+          <button id="budget-clear" class="btn ghost small" title="مسح الميزانية">✖</button>
+        </div>
+        <div id="budget-status" class="budget-status" style="display:none;">
+          <span class="budget-label">المتبقي:</span>
+          <strong id="budget-remaining">0</strong>
+          <div class="budget-progress-wrap">
+            <div class="budget-progress"><span id="budget-progress-bar"></span></div>
+          </div>
+        </div>
+      </div>
+
       <!-- بطاقات الملخص -->
       <div class="stats">
         <div class="stat-card">

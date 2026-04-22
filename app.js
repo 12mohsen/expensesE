@@ -335,6 +335,7 @@ $('#hint-form').addEventListener('submit', async (e) => {
 let currentUser = null;
 let expenses = [];
 let editingId = null;
+let currentBudget = 0;
 
 async function loadExpenses() {
   expenses = await DB.getExpenses(currentUser);
@@ -434,6 +435,7 @@ async function enterApp() {
   $('#app-screen').classList.remove('hidden');
   $('#user-label').textContent = currentUser;
   await DB.purgeOldTrash(currentUser); // تنظيف العناصر الأقدم من 30 يوم
+  loadBudget();
   await loadExpenses();
   $('#expense-form [name=date]').value = new Date().toISOString().slice(0, 10);
 }
@@ -602,6 +604,9 @@ function render() {
   const sorted = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
   $('#stat-top').textContent = sorted[0] ? sorted[0][0] : '—';
 
+  // تحديث الميزانية
+  updateBudgetDisplay();
+
   // مخطط التصنيفات
   const chart = $('#cat-chart');
   if (!sorted.length) {
@@ -651,9 +656,112 @@ function escapeHtml(s) {
 }
 
 // ============================================================
+// مشاركة التطبيق
+// ============================================================
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║   ⬇️⬇️⬇️  ضع رابط المشاركة هنا  ⬇️⬇️⬇️               ║
+// ╚══════════════════════════════════════════════════════════╝
+const SHARE_LINK = 'https://expensese.netlify.app/';
+// ╔══════════════════════════════════════════════════════════╗
+// ║   ⬆️⬆️⬆️  ضع رابط المشاركة هنا  ⬆️⬆️⬆️               ║
+// ╚══════════════════════════════════════════════════════════╝
+
+$('#share-btn').addEventListener('click', () => {
+  if (!SHARE_LINK || SHARE_LINK === 'ضع_الرابط_هنا') {
+    toast('لم يتم تحديد رابط المشاركة بعد', 'error');
+    return;
+  }
+  if (navigator.share) {
+    navigator.share({
+      title: 'نفقات – إدارة مصاريف المنزل',
+      text: 'جرّب تطبيق نفقات لإدارة مصاريف منزلك بسهولة!',
+      url: SHARE_LINK,
+    }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(SHARE_LINK).then(() => {
+      toast('تم نسخ رابط المشاركة ✅', 'success');
+    }).catch(() => {
+      prompt('انسخ رابط المشاركة:', SHARE_LINK);
+    });
+  }
+});
+
+// ============================================================
+// الميزانية
+// ============================================================
+function getBudgetKey() {
+  return `dm_budget_${currentUser}`;
+}
+
+function loadBudget() {
+  const saved = localStorage.getItem(getBudgetKey());
+  currentBudget = saved ? parseFloat(saved) : 0;
+  $('#budget-input').value = currentBudget || '';
+  updateBudgetDisplay();
+}
+
+function saveBudget(val) {
+  currentBudget = val;
+  if (val > 0) {
+    localStorage.setItem(getBudgetKey(), val);
+  } else {
+    localStorage.removeItem(getBudgetKey());
+  }
+  updateBudgetDisplay();
+}
+
+function updateBudgetDisplay() {
+  const statusEl = $('#budget-status');
+  if (!currentBudget || currentBudget <= 0) {
+    statusEl.style.display = 'none';
+    return;
+  }
+  statusEl.style.display = 'flex';
+  const total = expenses.reduce((s, x) => s + x.amount, 0);
+  const remaining = currentBudget - total;
+  const pct = Math.min((total / currentBudget) * 100, 100);
+
+  $('#budget-remaining').textContent = fmtMoney(remaining);
+  const bar = $('#budget-progress-bar');
+  bar.style.width = pct + '%';
+
+  // تلوين حسب النسبة
+  const remainEl = $('#budget-remaining');
+  if (remaining <= 0) {
+    bar.className = 'over';
+    remainEl.className = 'budget-over';
+  } else if (pct >= 75) {
+    bar.className = 'warn';
+    remainEl.className = 'budget-warn';
+  } else {
+    bar.className = '';
+    remainEl.className = '';
+  }
+}
+
+$('#budget-save').addEventListener('click', () => {
+  const val = parseFloat($('#budget-input').value) || 0;
+  saveBudget(val);
+  if (val > 0) {
+    toast('تم حفظ الميزانية: ' + fmtMoney(val), 'success');
+  } else {
+    toast('لم يتم تحديد ميزانية');
+  }
+});
+
+$('#budget-clear').addEventListener('click', () => {
+  if (!currentBudget || currentBudget <= 0) return;
+  if (!confirm('هل أنت متأكد من مسح الميزانية؟')) return;
+  $('#budget-input').value = '';
+  saveBudget(0);
+  toast('تم مسح الميزانية');
+});
+
+// ============================================================
 // تشغيل
 // ============================================================
-applyTheme(localStorage.getItem(LS_THEME) || 'light');
+applyTheme(localStorage.getItem(LS_THEME) || 'dark');
 const savedUser = localStorage.getItem('dm_session_user') || sessionStorage.getItem('dm_session_user');
 if (savedUser) {
   enterApp();
