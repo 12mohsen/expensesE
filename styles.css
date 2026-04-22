@@ -410,3 +410,177 @@ tbody tr:hover { background: color-mix(in oklab, var(--primary) 8%, transparent)
   box-shadow: 0 6px 20px rgba(0,0,0,0.12);
   border-color: var(--primary);
 }
+
+/* ملخص الأشهر */
+.months-grid {
+  margin-top: 8px;
+}
+.year-section {
+  margin-bottom: 16px;
+}
+.year-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+.months-row {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x mandatory;
+}
+.months-row::-webkit-scrollbar {
+  height: 6px;
+}
+.months-row::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 6px;
+}
+.month-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+  overflow: hidden;
+  min-width: 220px;
+  max-width: 260px;
+  flex-shrink: 0;
+  scroll-snap-align: start;
+}
+.month-card.empty-month {
+  opacity: 0.5;
+}
+.month-card.empty-month:hover {
+  opacity: 0.85;
+}
+.month-num {
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--bg-2);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 700;
+}
+.month-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 4px;
+  background: var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.month-card.current::before {
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+}
+.month-card.current {
+  border-color: var(--primary);
+  box-shadow: 0 4px 16px rgba(108, 99, 255, 0.15);
+}
+.month-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+.month-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.month-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.month-year {
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--bg-2);
+  padding: 2px 10px;
+  border-radius: 99px;
+  font-weight: 600;
+  display: none;
+}
+.month-total {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--primary);
+  margin: 4px 0 10px;
+  direction: ltr;
+  text-align: right;
+}
+.month-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.month-budget-row {
+  margin-top: 8px;
+}
+.month-budget-input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  direction: ltr;
+  text-align: right;
+}
+.month-budget-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.12);
+}
+.month-budget-input::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+.month-remaining {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: 8px;
+}
+.month-remaining b {
+  font-weight: 900;
+}
+.month-remaining.warn {
+  color: #f59e0b;
+}
+.month-remaining.over {
+  color: var(--danger);
+}
+.month-progress {
+  height: 6px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.month-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width 0.5s ease;
+}
+.month-progress span.warn {
+  background: #f59e0b;
+}
+.month-progress span.over {
+  background: var(--danger);
+}

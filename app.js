@@ -631,7 +631,139 @@ function render() {
       </div>
     `).join('');
   }
+
+  // رسم ملخص الأشهر
+  renderMonths();
 }
+
+// ============================================================
+// ملخص الأشهر
+// ============================================================
+const MONTH_NAMES = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+let showAllMonths = false;
+
+function renderMonths() {
+  const grid = $('#months-grid');
+  const emptyMsg = $('#months-empty');
+  emptyMsg.style.display = 'none';
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-indexed
+  const currentYM = now.toISOString().slice(0, 7);
+
+  // تجميع المصاريف حسب الشهر (YYYY-MM)
+  const byMonth = {};
+  expenses.forEach(x => {
+    const ym = x.date.slice(0, 7);
+    if (!byMonth[ym]) byMonth[ym] = { items: [], total: 0, cats: {} };
+    byMonth[ym].items.push(x);
+    byMonth[ym].total += x.amount;
+    byMonth[ym].cats[x.category] = (byMonth[ym].cats[x.category] || 0) + x.amount;
+  });
+
+  // جمع كل السنوات الموجودة + السنة الحالية
+  const years = new Set([currentYear]);
+  Object.keys(byMonth).forEach(ym => years.add(parseInt(ym.split('-')[0])));
+  const sortedYears = [...years].sort((a, b) => b - a);
+
+  // تحديث زر العرض
+  const toggleBtn = $('#months-toggle');
+  if (sortedYears.length <= 1) {
+    toggleBtn.style.display = 'none';
+  } else {
+    toggleBtn.style.display = '';
+    toggleBtn.textContent = showAllMonths ? 'السنة الحالية فقط' : 'عرض كل السنوات (' + sortedYears.length + ')';
+  }
+
+  const displayYears = showAllMonths ? sortedYears : [currentYear];
+
+  let html = '';
+  displayYears.forEach(year => {
+    html += `<div class="year-section"><h4 class="year-title">📅 ${year}</h4><div class="months-row">`;
+
+    // عرض الأشهر من يناير (0) إلى الشهر الحالي (للسنة الحالية) أو 12 شهر (للسنوات السابقة)
+    const maxMonth = (year === currentYear) ? currentMonth : 11;
+
+    for (let m = 0; m <= maxMonth; m++) {
+      const ym = `${year}-${String(m + 1).padStart(2, '0')}`;
+      const data = byMonth[ym] || null;
+      const monthName = MONTH_NAMES[m];
+      const isCurrent = ym === currentYM;
+      const total = data ? data.total : 0;
+      const count = data ? data.items.length : 0;
+
+      // أعلى تصنيف
+      let topName = '—';
+      if (data) {
+        const topCat = Object.entries(data.cats).sort((a, b) => b[1] - a[1]);
+        topName = topCat[0] ? topCat[0][0] : '—';
+      }
+
+      // ميزانية الشهر
+      const mBudgetKey = `dm_mbudget_${currentUser}_${ym}`;
+      const mBudget = parseFloat(localStorage.getItem(mBudgetKey) || '0');
+      const remaining = mBudget > 0 ? mBudget - total : null;
+      const pct = mBudget > 0 ? Math.min((total / mBudget) * 100, 100) : 0;
+      const pctClass = remaining !== null && remaining <= 0 ? 'over' : pct >= 75 ? 'warn' : '';
+      const emptyClass = !data ? 'empty-month' : '';
+
+      html += `
+        <div class="month-card ${isCurrent ? 'current' : ''} ${emptyClass}">
+          <div class="month-header">
+            <span class="month-name">${monthName}</span>
+            <span class="month-num">${m + 1}</span>
+          </div>
+          <div class="month-total">${total > 0 ? fmtMoney(total) : '0'}</div>
+          <div class="month-meta">
+            <span>🧾 ${count} عملية</span>
+            ${count > 0 ? `<span>🏆 ${escapeHtml(topName)}</span>` : ''}
+          </div>
+          <div class="month-budget-row">
+            <input type="number" class="month-budget-input" data-ym="${ym}" value="${mBudget || ''}" placeholder="ميزانية الشهر" min="0" step="0.01" lang="en" inputmode="decimal" />
+          </div>
+          ${mBudget > 0 ? `
+            <div class="month-remaining ${pctClass}">
+              المتبقي: <b>${fmtMoney(remaining)}</b>
+            </div>
+            <div class="month-progress"><span class="${pctClass}" style="width:${pct}%"></span></div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    html += `</div></div>`;
+  });
+
+  grid.innerHTML = html;
+
+  // التمرير للشهر الحالي
+  const currentCard = grid.querySelector('.month-card.current');
+  if (currentCard) {
+    setTimeout(() => currentCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }), 200);
+  }
+}
+
+// حفظ ميزانية الشهر عند التغيير
+$('#months-grid').addEventListener('change', (e) => {
+  const inp = e.target.closest('.month-budget-input');
+  if (!inp) return;
+  const ym = inp.dataset.ym;
+  const val = parseFloat(inp.value) || 0;
+  const key = `dm_mbudget_${currentUser}_${ym}`;
+  if (val > 0) {
+    localStorage.setItem(key, val);
+    toast('تم حفظ ميزانية ' + MONTH_NAMES[parseInt(ym.split('-')[1]) - 1] + ': ' + fmtMoney(val), 'success');
+  } else {
+    localStorage.removeItem(key);
+  }
+  renderMonths();
+});
+
+$('#months-toggle').addEventListener('click', () => {
+  showAllMonths = !showAllMonths;
+  renderMonths();
+});
 
 // أحداث الجدول
 $('#expense-table').addEventListener('click', async (e) => {
