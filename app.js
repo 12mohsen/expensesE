@@ -662,27 +662,55 @@ function escapeHtml(s) {
 // ╔══════════════════════════════════════════════════════════╗
 // ║   ⬇️⬇️⬇️  ضع رابط المشاركة هنا  ⬇️⬇️⬇️               ║
 // ╚══════════════════════════════════════════════════════════╝
-const SHARE_LINK = 'https://expensese.netlify.app/';
+const SHARE_LINK = 'https://www.appcreator24.com/app4008813-n0rd4w';
 // ╔══════════════════════════════════════════════════════════╗
 // ║   ⬆️⬆️⬆️  ضع رابط المشاركة هنا  ⬆️⬆️⬆️               ║
 // ╚══════════════════════════════════════════════════════════╝
 
-$('#share-btn').addEventListener('click', () => {
+$('#share-btn').addEventListener('click', async () => {
   if (!SHARE_LINK || SHARE_LINK === 'ضع_الرابط_هنا') {
     toast('لم يتم تحديد رابط المشاركة بعد', 'error');
     return;
   }
+  const shareData = {
+    title: 'نفقات – إدارة مصاريف المنزل',
+    text: 'جرّب تطبيق نفقات لإدارة مصاريف منزلك بسهولة!\n' + SHARE_LINK,
+    url: SHARE_LINK,
+  };
+  // محاولة استخدام Web Share API (يعمل على الجوال والمتصفحات الحديثة)
   if (navigator.share) {
-    navigator.share({
-      title: 'نفقات – إدارة مصاريف المنزل',
-      text: 'جرّب تطبيق نفقات لإدارة مصاريف منزلك بسهولة!',
-      url: SHARE_LINK,
-    }).catch(() => {});
+    try { await navigator.share(shareData); } catch (e) { /* المستخدم ألغى */ }
   } else {
-    navigator.clipboard.writeText(SHARE_LINK).then(() => {
-      toast('تم نسخ رابط المشاركة ✅', 'success');
-    }).catch(() => {
-      prompt('انسخ رابط المشاركة:', SHARE_LINK);
+    // إذا لم يدعم المتصفح Web Share، نعرض خيارات المشاركة يدوياً
+    const encoded = encodeURIComponent(SHARE_LINK);
+    const textEncoded = encodeURIComponent('جرّب تطبيق نفقات لإدارة مصاريف منزلك بسهولة! ' + SHARE_LINK);
+    const modal = document.createElement('div');
+    modal.className = 'modal share-modal';
+    modal.innerHTML = `
+      <div class="modal-backdrop"></div>
+      <div class="modal-card" style="max-width:400px;text-align:center;">
+        <div class="modal-head">
+          <h3>🔗 مشاركة التطبيق</h3>
+          <button class="icon-btn share-close" aria-label="إغلاق">✖</button>
+        </div>
+        <div class="share-options">
+          <a href="https://wa.me/?text=${textEncoded}" target="_blank" class="share-opt" title="واتساب">💬<span>واتساب</span></a>
+          <a href="https://t.me/share/url?url=${encoded}&text=${encodeURIComponent('جرّب تطبيق نفقات!')}" target="_blank" class="share-opt" title="تلغرام">✈️<span>تلغرام</span></a>
+          <a href="https://twitter.com/intent/tweet?url=${encoded}&text=${encodeURIComponent('جرّب تطبيق نفقات!')}" target="_blank" class="share-opt" title="تويتر">🐦<span>تويتر</span></a>
+          <button class="share-opt" id="share-copy" title="نسخ الرابط">📋<span>نسخ الرابط</span></button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.modal-backdrop').addEventListener('click', () => modal.remove());
+    modal.querySelector('.share-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('#share-copy').addEventListener('click', () => {
+      navigator.clipboard.writeText(SHARE_LINK).then(() => {
+        toast('تم نسخ الرابط ✅', 'success');
+        modal.remove();
+      }).catch(() => {
+        prompt('انسخ الرابط:', SHARE_LINK);
+      });
     });
   }
 });

@@ -375,3 +375,38 @@ tbody tr:hover { background: color-mix(in oklab, var(--primary) 8%, transparent)
 .budget-progress span.over {
   background: var(--danger);
 }
+
+/* خيارات المشاركة */
+.share-options {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 20px 10px;
+  flex-wrap: wrap;
+}
+.share-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--text);
+  font-size: 28px;
+  transition: transform 0.2s, box-shadow 0.2s;
+  min-width: 80px;
+  font-family: inherit;
+}
+.share-opt span {
+  font-size: 12px;
+  font-weight: 600;
+}
+.share-opt:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  border-color: var(--primary);
+}
