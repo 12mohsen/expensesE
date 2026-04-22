@@ -403,8 +403,11 @@ $('#trash-table').addEventListener('click', async (e) => {
   if (!btn) return;
   const id = btn.dataset.id;
   if (btn.dataset.act === 'restore') {
+    const trashItems = await DB.getTrash(currentUser);
+    const restoredItem = trashItems.find(x => x.id === id);
     const ok = await DB.restoreExpense(id, currentUser);
     if (!ok) return toast('خطأ في الاسترجاع', 'error');
+    if (restoredItem && currentBudget > 0) removeFromSpent(restoredItem.amount);
     toast('تم الاسترجاع ♻️', 'success');
     await loadExpenses();
     await renderTrash();
@@ -507,6 +510,10 @@ $('#filter-cat').addEventListener('change', render);
 $('#clear-all').addEventListener('click', async () => {
   if (!expenses.length) return toast('لا يوجد شيء لحذفه');
   if (!confirm('هل أنت متأكد من حذف جميع المصاريف؟')) return;
+  if (currentBudget > 0) {
+    const totalActive = expenses.reduce((s, x) => s + x.amount, 0);
+    addToSpent(totalActive);
+  }
   const ok = await DB.deleteAllExpenses(currentUser);
   if (!ok) return toast('خطأ في الحذف', 'error');
   toast('تم حذف الكل', 'error');
@@ -583,6 +590,7 @@ function render() {
       <td class="amount">${fmtMoney(x.amount)}</td>
       <td>${escapeHtml(x.note || '—')}</td>
       <td class="row-actions">
+        <button title="استرجاع المبلغ للميزانية" data-act="refund" data-id="${x.id}">💰</button>
         <button title="تعديل" data-act="edit" data-id="${x.id}">✏️</button>
         <button title="حذف" data-act="del" data-id="${x.id}">🗑️</button>
       </td>
@@ -630,10 +638,22 @@ $('#expense-table').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
   const id = btn.dataset.id;
-  if (btn.dataset.act === 'del') {
+  if (btn.dataset.act === 'refund') {
+    const item = expenses.find(x => x.id === id);
+    if (!item) return;
+    if (!currentBudget || currentBudget <= 0) return toast('لا توجد ميزانية لاسترجاع المبلغ إليها', 'error');
+    if (!confirm('استرجاع ' + fmtMoney(item.amount) + ' للميزانية وحذف المصروف؟')) return;
+    const ok = await DB.deleteExpense(id, currentUser);
+    if (!ok) return toast('خطأ في الاسترجاع', 'error');
+    removeFromSpent(item.amount);
+    toast('تم استرجاع ' + fmtMoney(item.amount) + ' للميزانية 💰', 'success');
+    await loadExpenses();
+  } else if (btn.dataset.act === 'del') {
     if (!confirm('حذف هذا المصروف؟')) return;
+    const item = expenses.find(x => x.id === id);
     const ok = await DB.deleteExpense(id, currentUser);
     if (!ok) return toast('خطأ في الحذف', 'error');
+    if (item && currentBudget > 0) addToSpent(item.amount);
     toast('تم الحذف', 'error');
     await loadExpenses();
   } else if (btn.dataset.act === 'edit') {
@@ -660,11 +680,15 @@ function escapeHtml(s) {
 // ============================================================
 
 // ╔══════════════════════════════════════════════════════════╗
-// ║   ⬇️⬇️⬇️  ضع رابط المشاركة هنا  ⬇️⬇️⬇️               ║
+// ║   ⬇️⬇️⬇️  رابط التطبيق  ⬇️⬇️⬇️                        ║
 // ╚══════════════════════════════════════════════════════════╝
 const SHARE_LINK = 'https://www.appcreator24.com/app4008813-n0rd4w';
 // ╔══════════════════════════════════════════════════════════╗
-// ║   ⬆️⬆️⬆️  ضع رابط المشاركة هنا  ⬆️⬆️⬆️               ║
+// ║   ⬇️⬇️⬇️  رابط المتصفح - ضع الرابط هنا  ⬇️⬇️⬇️       ║
+// ╚══════════════════════════════════════════════════════════╝
+const BROWSER_LINK = 'https://expensese.netlify.app/';
+// ╔══════════════════════════════════════════════════════════╗
+// ║   ⬆️⬆️⬆️  الروابط أعلاه  ⬆️⬆️⬆️                        ║
 // ╚══════════════════════════════════════════════════════════╝
 
 $('#share-btn').addEventListener('click', async () => {
@@ -672,9 +696,14 @@ $('#share-btn').addEventListener('click', async () => {
     toast('لم يتم تحديد رابط المشاركة بعد', 'error');
     return;
   }
+  let shareText = '📒 نفقات – إدارة مصاريف المنزل\n\n';
+  shareText += '📱 للتطبيق:\n' + SHARE_LINK + '\n\n';
+  if (BROWSER_LINK && BROWSER_LINK !== 'ضع_رابط_المتصفح_هنا') {
+    shareText += '🌐 اضغط للانتقال إلى المتصفح:\n' + BROWSER_LINK;
+  }
   const shareData = {
     title: 'نفقات – إدارة مصاريف المنزل',
-    text: 'جرّب تطبيق نفقات لإدارة مصاريف منزلك بسهولة!\n' + SHARE_LINK,
+    text: shareText,
     url: SHARE_LINK,
   };
   // محاولة استخدام Web Share API (يعمل على الجوال والمتصفحات الحديثة)
@@ -683,7 +712,7 @@ $('#share-btn').addEventListener('click', async () => {
   } else {
     // إذا لم يدعم المتصفح Web Share، نعرض خيارات المشاركة يدوياً
     const encoded = encodeURIComponent(SHARE_LINK);
-    const textEncoded = encodeURIComponent('جرّب تطبيق نفقات لإدارة مصاريف منزلك بسهولة! ' + SHARE_LINK);
+    const textEncoded = encodeURIComponent(shareText);
     const modal = document.createElement('div');
     modal.className = 'modal share-modal';
     modal.innerHTML = `
@@ -721,6 +750,29 @@ $('#share-btn').addEventListener('click', async () => {
 function getBudgetKey() {
   return `dm_budget_${currentUser}`;
 }
+function getSpentKey() {
+  return `dm_spent_${currentUser}`;
+}
+function getBudgetStartKey() {
+  return `dm_budget_start_${currentUser}`;
+}
+function getBudgetStart() {
+  return localStorage.getItem(getBudgetStartKey()) || '';
+}
+
+function getTotalSpent() {
+  return parseFloat(localStorage.getItem(getSpentKey()) || '0');
+}
+
+function addToSpent(amount) {
+  const current = getTotalSpent();
+  localStorage.setItem(getSpentKey(), current + amount);
+}
+
+function removeFromSpent(amount) {
+  const current = getTotalSpent();
+  localStorage.setItem(getSpentKey(), Math.max(0, current - amount));
+}
 
 function loadBudget() {
   const saved = localStorage.getItem(getBudgetKey());
@@ -746,7 +798,12 @@ function updateBudgetDisplay() {
     return;
   }
   statusEl.style.display = 'flex';
-  const total = expenses.reduce((s, x) => s + x.amount, 0);
+  const budgetStart = getBudgetStart();
+  const activeTotal = expenses
+    .filter(x => !budgetStart || x.date >= budgetStart)
+    .reduce((s, x) => s + x.amount, 0);
+  const deletedSpent = getTotalSpent();
+  const total = activeTotal + deletedSpent;
   const remaining = currentBudget - total;
   const pct = Math.min((total / currentBudget) * 100, 100);
 
@@ -772,6 +829,8 @@ $('#budget-save').addEventListener('click', () => {
   const val = parseFloat($('#budget-input').value) || 0;
   saveBudget(val);
   if (val > 0) {
+    localStorage.setItem(getBudgetStartKey(), new Date().toISOString().slice(0, 10));
+    localStorage.removeItem(getSpentKey());
     toast('تم حفظ الميزانية: ' + fmtMoney(val), 'success');
   } else {
     toast('لم يتم تحديد ميزانية');
@@ -783,6 +842,8 @@ $('#budget-clear').addEventListener('click', () => {
   if (!confirm('هل أنت متأكد من مسح الميزانية؟')) return;
   $('#budget-input').value = '';
   saveBudget(0);
+  localStorage.removeItem(getSpentKey());
+  localStorage.removeItem(getBudgetStartKey());
   toast('تم مسح الميزانية');
 });
 
