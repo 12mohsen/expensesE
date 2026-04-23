@@ -26,12 +26,13 @@ function initSupabase() {
     useLocalStorage = true;
   }
   supabaseReady = true;
-  // محاولة الدخول التلقائي بعد اكتمال الاتصال وتحميل باقي الملف
-  if (typeof autoLogin === 'function') {
-    autoLogin();
-  } else {
-    // ننتظر تحميل باقي الملف
-    setTimeout(() => { if (typeof autoLogin === 'function') autoLogin(); }, 0);
+  // تأخير دائم لانتظار تهيئة كل متغيرات التطبيق (let/const غير مرفوعة)
+  window.addEventListener('load', () => {
+    if (typeof autoLogin === 'function') autoLogin();
+  });
+  // احتياط: إذا كان الـ load حدث بالفعل
+  if (document.readyState === 'complete') {
+    setTimeout(() => { if (typeof autoLogin === 'function') autoLogin(); }, 50);
   }
 }
 initSupabase();
@@ -1015,7 +1016,7 @@ function closeContactModal() {
 $('#contact-close').addEventListener('click', closeContactModal);
 $('#contact-modal .modal-backdrop').addEventListener('click', closeContactModal);
 
-$('#contact-form').addEventListener('submit', async (e) => {
+$('#contact-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const msg = $('#contact-msg').value.trim();
   const msgEl = $('#contact-form-msg');
@@ -1029,41 +1030,51 @@ $('#contact-form').addEventListener('submit', async (e) => {
   btn.textContent = '⏳ جاري الإرسال...';
   msgEl.textContent = '';
 
-  try {
-    const payload = {
-      _subject: 'ملاحظة من تطبيق نفقات - ' + (currentUser || 'مجهول'),
-      _captcha: 'false',
-      _template: 'table',
-      from_user: currentUser || 'مجهول',
-      message: msg,
-    };
+  // إرسال عبر iframe مخفي (يتجاوز مشاكل CORS ولا يحتاج تفعيل JSON)
+  const iframeName = 'contact-frame-' + Date.now();
+  const iframe = document.createElement('iframe');
+  iframe.name = iframeName;
+  iframe.style.display = 'none';
+  document.body.appendChild(iframe);
 
-    const res = await fetch(`https://formsubmit.co/ajax/${CONTACT_EMAIL}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json().catch(() => ({}));
+  const form = document.createElement('form');
+  form.action = `https://formsubmit.co/${CONTACT_EMAIL}`;
+  form.method = 'POST';
+  form.target = iframeName;
+  form.style.display = 'none';
 
-    if (res.ok && (data.success === 'true' || data.success === true)) {
-      msgEl.textContent = 'تم إرسال ملاحظتك بنجاح ✅ شكراً لك!';
-      msgEl.className = 'form-msg success';
-      $('#contact-msg').value = '';
-      setTimeout(closeContactModal, 2000);
-    } else {
-      throw new Error('فشل الإرسال');
-    }
-  } catch (err) {
-    console.error('FormSubmit error:', err);
-    msgEl.textContent = 'حدث خطأ، يرجى المحاولة لاحقاً.';
-    msgEl.className = 'form-msg error';
-  } finally {
+  const fields = {
+    _subject: 'ملاحظة من تطبيق نفقات - ' + (currentUser || 'مجهول'),
+    _captcha: 'false',
+    _template: 'table',
+    _next: 'about:blank',
+    from_user: currentUser || 'مجهول',
+    message: msg,
+  };
+  Object.entries(fields).forEach(([k, v]) => {
+    const inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = k;
+    inp.value = v;
+    form.appendChild(inp);
+  });
+
+  document.body.appendChild(form);
+  form.submit();
+
+  // نعتبر الإرسال ناجحاً بعد فترة قصيرة (iframe لا يمكن قراءة محتواه بسبب CORS)
+  setTimeout(() => {
+    msgEl.textContent = 'تم إرسال ملاحظتك ✅ شكراً لك! (إذا لم تصل، تحقق من تفعيل البريد عبر أول رسالة في Spam)';
+    msgEl.className = 'form-msg success';
+    $('#contact-msg').value = '';
     btn.disabled = false;
     btn.textContent = 'إرسال ✉️';
-  }
+    setTimeout(() => {
+      closeContactModal();
+      form.remove();
+      iframe.remove();
+    }, 3500);
+  }, 1500);
 });
 
 // ============================================================
