@@ -1064,7 +1064,7 @@ $('#contact-form').addEventListener('submit', (e) => {
 
   // نعتبر الإرسال ناجحاً بعد فترة قصيرة (iframe لا يمكن قراءة محتواه بسبب CORS)
   setTimeout(() => {
-    msgEl.textContent = 'تم إرسال ملاحظتك ✅ شكراً لك! (إذا لم تصل، تحقق من تفعيل البريد عبر أول رسالة في Spam)';
+    msgEl.textContent = 'تم إرسال ملاحظتك ✅ شكراً لك!';
     msgEl.className = 'form-msg success';
     $('#contact-msg').value = '';
     btn.disabled = false;
