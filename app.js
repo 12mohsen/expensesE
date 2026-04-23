@@ -26,8 +26,13 @@ function initSupabase() {
     useLocalStorage = true;
   }
   supabaseReady = true;
-  // محاولة الدخول التلقائي بعد اكتمال الاتصال
-  autoLogin();
+  // محاولة الدخول التلقائي بعد اكتمال الاتصال وتحميل باقي الملف
+  if (typeof autoLogin === 'function') {
+    autoLogin();
+  } else {
+    // ننتظر تحميل باقي الملف
+    setTimeout(() => { if (typeof autoLogin === 'function') autoLogin(); }, 0);
+  }
 }
 initSupabase();
 
