@@ -110,6 +110,7 @@
           </div>
         </div>
         <div class="header-actions">
+          <button id="contact-btn" class="icon-btn" title="اتصل بنا">✉️</button>
           <button id="share-btn" class="icon-btn" title="مشاركة التطبيق">🔗</button>
           <button id="theme-toggle" class="icon-btn" title="الوضع الليلي/النهاري">🌙</button>
           <button id="export-btn" class="icon-btn" title="تصدير البيانات">⬇️</button>
@@ -304,6 +305,25 @@
       <div class="modal-foot">
         <button id="trash-purge" class="btn danger small">إفراغ السلة</button>
       </div>
+    </div>
+  </div>
+
+  <!-- نافذة اتصل بنا -->
+  <div id="contact-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" style="max-width:420px;">
+      <div class="modal-head">
+        <h3>✉️ اتصل بنا</h3>
+        <button class="icon-btn" id="contact-close" aria-label="إغلاق">✖</button>
+      </div>
+      <form id="contact-form" style="padding:0 4px;">
+        <label style="margin-bottom:12px;display:block;">
+          <span style="font-weight:600;display:block;margin-bottom:6px;">💬 أضف ملاحظتك أو اقتراحك</span>
+          <textarea id="contact-msg" rows="5" placeholder="اكتب ملاحظتك هنا..." style="width:100%;resize:vertical;"></textarea>
+        </label>
+        <button type="submit" class="btn primary block">إرسال ✉️</button>
+        <p id="contact-form-msg" class="form-msg" aria-live="polite"></p>
+      </form>
     </div>
   </div>
 

@@ -988,6 +988,80 @@ $('#budget-clear').addEventListener('click', () => {
 });
 
 // ============================================================
+// اتصل بنا
+// ============================================================
+const CONTACT_EMAIL = 'krain123ify@gmail.com';
+
+$('#contact-btn').addEventListener('click', () => {
+  const modal = $('#contact-modal');
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+  $('#contact-msg').focus();
+});
+
+function closeContactModal() {
+  const modal = $('#contact-modal');
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  $('#contact-form-msg').textContent = '';
+  $('#contact-form-msg').className = 'form-msg';
+}
+
+$('#contact-close').addEventListener('click', closeContactModal);
+$('#contact-modal .modal-backdrop').addEventListener('click', closeContactModal);
+
+$('#contact-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('#contact-msg').value.trim();
+  const msgEl = $('#contact-form-msg');
+  if (!msg) {
+    msgEl.textContent = 'الرجاء كتابة ملاحظتك أولاً.';
+    msgEl.className = 'form-msg error';
+    return;
+  }
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true;
+  btn.textContent = '⏳ جاري الإرسال...';
+  msgEl.textContent = '';
+
+  try {
+    const payload = {
+      _subject: 'ملاحظة من تطبيق نفقات - ' + (currentUser || 'مجهول'),
+      _captcha: 'false',
+      _template: 'table',
+      from_user: currentUser || 'مجهول',
+      message: msg,
+    };
+
+    const res = await fetch(`https://formsubmit.co/ajax/${CONTACT_EMAIL}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && (data.success === 'true' || data.success === true)) {
+      msgEl.textContent = 'تم إرسال ملاحظتك بنجاح ✅ شكراً لك!';
+      msgEl.className = 'form-msg success';
+      $('#contact-msg').value = '';
+      setTimeout(closeContactModal, 2000);
+    } else {
+      throw new Error('فشل الإرسال');
+    }
+  } catch (err) {
+    console.error('FormSubmit error:', err);
+    msgEl.textContent = 'حدث خطأ، يرجى المحاولة لاحقاً.';
+    msgEl.className = 'form-msg error';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'إرسال ✉️';
+  }
+});
+
+// ============================================================
 // تشغيل
 // ============================================================
 applyTheme(localStorage.getItem(LS_THEME) || 'dark');
