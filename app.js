@@ -10,6 +10,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 let sb = null;
 let useLocalStorage = false;
 
+let supabaseReady = false;
 function initSupabase() {
   if (!window.supabase) {
     console.log('⏳ انتظار تحميل Supabase...');
@@ -24,6 +25,9 @@ function initSupabase() {
     console.error('❌ خطأ في Supabase، سيتم استخدام LocalStorage:', e);
     useLocalStorage = true;
   }
+  supabaseReady = true;
+  // محاولة الدخول التلقائي بعد اكتمال الاتصال
+  autoLogin();
 }
 initSupabase();
 
@@ -304,8 +308,12 @@ $('#login-form').addEventListener('submit', async (e) => {
     if (d.remember) {
       localStorage.setItem('dm_session_user', username);
       localStorage.setItem('dm_remember', '1');
+      localStorage.setItem('dm_saved_username', username);
+      localStorage.setItem('dm_saved_password', d.password);
     } else {
       sessionStorage.setItem('dm_session_user', username);
+      localStorage.removeItem('dm_saved_username');
+      localStorage.removeItem('dm_saved_password');
     }
     formMsg(f, 'مرحباً بعودتك!', 'success');
     setTimeout(enterApp, 400);
@@ -856,8 +864,8 @@ $('#share-btn').addEventListener('click', async () => {
         </div>
         <div class="share-options">
           <a href="https://wa.me/?text=${textEncoded}" target="_blank" class="share-opt" title="واتساب">💬<span>واتساب</span></a>
-          <a href="https://t.me/share/url?url=${encoded}&text=${encodeURIComponent('جرّب تطبيق نفقات!')}" target="_blank" class="share-opt" title="تلغرام">✈️<span>تلغرام</span></a>
-          <a href="https://twitter.com/intent/tweet?url=${encoded}&text=${encodeURIComponent('جرّب تطبيق نفقات!')}" target="_blank" class="share-opt" title="تويتر">🐦<span>تويتر</span></a>
+          <a href="https://t.me/share/url?url=${encoded}&text=${textEncoded}" target="_blank" class="share-opt" title="تلغرام">✈️<span>تلغرام</span></a>
+          <a href="https://x.com/intent/post?text=${textEncoded}" target="_blank" class="share-opt" title="تويتر X">🐦<span>تويتر X</span></a>
           <button class="share-opt" id="share-copy" title="نسخ الرابط">📋<span>نسخ الرابط</span></button>
         </div>
       </div>
@@ -983,7 +991,22 @@ $('#budget-clear').addEventListener('click', () => {
 // تشغيل
 // ============================================================
 applyTheme(localStorage.getItem(LS_THEME) || 'dark');
-const savedUser = localStorage.getItem('dm_session_user') || sessionStorage.getItem('dm_session_user');
-if (savedUser) {
-  enterApp();
+
+// ملء حقول تسجيل الدخول من البيانات المحفوظة
+(function fillSavedCredentials() {
+  const savedName = localStorage.getItem('dm_saved_username');
+  const savedPass = localStorage.getItem('dm_saved_password');
+  if (savedName) $('#login-form [name=username]').value = savedName;
+  if (savedPass) $('#login-form [name=password]').value = savedPass;
+})();
+
+function autoLogin() {
+  const savedUser = localStorage.getItem('dm_session_user') || sessionStorage.getItem('dm_session_user');
+  if (savedUser) {
+    enterApp();
+  }
+}
+// إذا Supabase جاهز مسبقاً، ادخل مباشرة
+if (supabaseReady) {
+  autoLogin();
 }

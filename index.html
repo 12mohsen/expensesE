@@ -36,15 +36,15 @@
       </div>
 
       <!-- تسجيل الدخول -->
-      <form id="login-form" class="auth-form active" autocomplete="off">
+      <form id="login-form" class="auth-form active" autocomplete="on">
         <label>
           <span>اسم المستخدم</span>
-          <input type="text" name="username" required placeholder="مثال: ahmad" />
+          <input type="text" name="username" required placeholder="مثال: ahmad" autocomplete="username" />
         </label>
         <label>
           <span>كلمة السر</span>
           <div class="pwd-wrap">
-            <input type="password" name="password" required placeholder="••••••••" />
+            <input type="password" name="password" required placeholder="••••••••" autocomplete="current-password" />
             <button type="button" class="toggle-pwd" aria-label="إظهار/إخفاء">👁️</button>
           </div>
         </label>
