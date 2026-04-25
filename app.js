@@ -97,10 +97,22 @@ const DB = {
       return users[username] || null;
     }
   },
+  async getUserInApp(username, appOrigin) {
+    if (this.isConnected()) {
+      try {
+        const { data } = await sb.from('users').select('*').eq('username', username).eq('app_origin', appOrigin).single();
+        return data;
+      } catch (e) { return null; }
+    } else {
+      const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
+      const user = users[username] || null;
+      return user && user.app_origin === appOrigin ? user : null;
+    }
+  },
   async createUser(username, password_hash, hint) {
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('users').insert({ username, password_hash, hint });
+        const { error } = await sb.from('users').insert({ username, password_hash, hint, app_origin: 'نفقات' });
         if (error) console.error('خطأ في إنشاء المستخدم:', error);
         return !error;
       } catch (e) { console.error(e); return false; }
@@ -277,9 +289,18 @@ $('#register-form').addEventListener('submit', async (e) => {
 
     formMsg(f, '⏳ جاري الإنشاء...', 'info');
 
-    // التحقق من وجود المستخدم
-    const existing = await DB.getUser(username);
-    if (existing) return formMsg(f, 'اسم المستخدم موجود مسبقاً.', 'error');
+    // التحقق من وجود المستخدم في هذا التطبيق فقط
+    const existing = await DB.getUserInApp(username, 'نفقات');
+    if (existing) {
+      // اقتراح أسماء بديلة
+      const suggestions = [
+        username + '123',
+        username + '_2026',
+        username + '_sarf'
+      ];
+      const suggestionsText = suggestions.join('، ');
+      return formMsg(f, `اسم المستخدم مستخدم مسبقاً في هذا التطبيق. جرب: ${suggestionsText}`, 'error');
+    }
 
     // إنشاء المستخدم
     const ok = await DB.createUser(username, await hash(d.password), d.hint.trim());
@@ -304,8 +325,8 @@ $('#login-form').addEventListener('submit', async (e) => {
 
     formMsg(f, '⏳ جاري تسجيل الدخول...', 'info');
 
-    const user = await DB.getUser(username);
-    if (!user) return formMsg(f, 'لا يوجد حساب بهذا الاسم.', 'error');
+    const user = await DB.getUserInApp(username, 'نفقات');
+    if (!user) return formMsg(f, 'لا يوجد حساب بهذا الاسم في هذا التطبيق. سجّل حساباً أولاً.', 'error');
 
     const pwdHash = await hash(d.password);
     const storedHash = user.password_hash || user.password;
@@ -1090,10 +1111,20 @@ applyTheme(localStorage.getItem(LS_THEME) || 'dark');
   if (savedPass) $('#login-form [name=password]').value = savedPass;
 })();
 
-function autoLogin() {
+async function autoLogin() {
   const savedUser = localStorage.getItem('dm_session_user') || sessionStorage.getItem('dm_session_user');
   if (savedUser) {
-    enterApp();
+    // التحقق من وجود المستخدم في تطبيق النفقات
+    const user = await DB.getUserInApp(savedUser, 'نفقات');
+    if (user) {
+      currentUser = savedUser;
+      enterApp();
+    } else {
+      // مسح الجلسة إذا لم يكن المستخدم موجوداً
+      localStorage.removeItem('dm_session_user');
+      sessionStorage.removeItem('dm_session_user');
+      localStorage.removeItem('dm_remember');
+    }
   }
 }
 // إذا Supabase جاهز مسبقاً، ادخل مباشرة
