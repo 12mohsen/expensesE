@@ -113,15 +113,22 @@ const DB = {
     if (this.isConnected()) {
       try {
         const { error } = await sb.from('users').insert({ username, password_hash, hint, app_origin: 'نفقات' });
-        if (error) console.error('خطأ في إنشاء المستخدم:', error);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+        if (error) {
+          console.error('خطأ في إنشاء المستخدم:', error);
+          // إرجاع تفاصيل الخطأ لمعالجته في الواجهة
+          return { success: false, error };
+        }
+        return { success: true };
+      } catch (e) {
+        console.error(e);
+        return { success: false, error: e };
+      }
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
-      if (users[username]) return false;
+      if (users[username]) return { success: false, error: { code: 'duplicate' } };
       users[username] = { password: password_hash, hint };
       localStorage.setItem(LS_USERS, JSON.stringify(users));
-      return true;
+      return { success: true };
     }
   },
 
@@ -303,8 +310,13 @@ $('#register-form').addEventListener('submit', async (e) => {
     }
 
     // إنشاء المستخدم
-    const ok = await DB.createUser(username, await hash(d.password), d.hint.trim());
-    if (!ok) return formMsg(f, 'حدث خطأ أثناء الإنشاء.', 'error');
+    const result = await DB.createUser(username, await hash(d.password), d.hint.trim());
+    if (!result.success) {
+      if (result.error?.code === '23505' || result.error?.code === 'duplicate' || result.error?.message?.includes('duplicate')) {
+        return formMsg(f, 'اسم المستخدم موجود مسبقاً في هذا التطبيق.', 'error');
+      }
+      return formMsg(f, 'حدث خطأ أثناء الإنشاء: ' + (result.error?.message || 'غير معروف'), 'error');
+    }
 
     formMsg(f, 'تم إنشاء الحساب! جاري تسجيل الدخول...', 'success');
     localStorage.setItem('dm_session_user', username);
