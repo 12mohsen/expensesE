@@ -116,12 +116,14 @@ const DB = {
         if (error) {
           console.error('خطأ في إنشاء المستخدم:', error);
           // إرجاع تفاصيل الخطأ لمعالجته في الواجهة
-          return { success: false, error };
+          const errorObj = error || {};
+          return { success: false, error: errorObj };
         }
         return { success: true };
       } catch (e) {
         console.error(e);
-        return { success: false, error: e };
+        const errorObj = e || {};
+        return { success: false, error: errorObj };
       }
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
