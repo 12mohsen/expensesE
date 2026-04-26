@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
   <title>نفقات – إدارة مصاريف المنزل</title>
   <meta name="description" content="سجّل مصاريف منزلك بسهولة: تنظيف، سيارة، تحميل، وكل شيء بينهما." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -82,7 +82,7 @@
         <p class="form-msg" aria-live="polite"></p>
       </form>
 
-      <!-- التلميح -->
+      <!-- التلميح وتغيير كلمة السر -->
       <form id="hint-form" class="auth-form" autocomplete="off">
         <label>
           <span>اسم المستخدم</span>
@@ -90,6 +90,31 @@
         </label>
         <button type="submit" class="btn secondary">عرض التلميح</button>
         <p class="form-msg" aria-live="polite"></p>
+
+        <!-- قسم تغيير كلمة السر (يظهر بعد التلميح) -->
+        <div id="change-pwd-section" style="display:none; margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+          <p class="change-pwd-hint-label" style="margin:0 0 12px; font-weight:600; color:var(--primary);">🔑 تغيير كلمة السر</p>
+          <label>
+            <span>كلمة السر الحالية</span>
+            <div class="pwd-wrap">
+              <input type="password" name="old_password" placeholder="••••••••" />
+              <button type="button" class="toggle-pwd" aria-label="إظهار/إخفاء">👁️</button>
+            </div>
+          </label>
+          <label>
+            <span>كلمة السر الجديدة</span>
+            <div class="pwd-wrap">
+              <input type="password" name="new_password" minlength="4" placeholder="4 أحرف على الأقل" />
+              <button type="button" class="toggle-pwd" aria-label="إظهار/إخفاء">👁️</button>
+            </div>
+          </label>
+          <label>
+            <span>تأكيد كلمة السر الجديدة</span>
+            <input type="password" name="new_password2" minlength="4" placeholder="أعد كتابة كلمة السر الجديدة" />
+          </label>
+          <button type="button" id="do-change-pwd-btn" class="btn primary block">تغيير كلمة السر</button>
+          <p id="change-pwd-msg" class="form-msg" aria-live="polite"></p>
+        </div>
       </form>
 
       <footer class="auth-foot">
@@ -110,6 +135,7 @@
           </div>
         </div>
         <div class="header-actions">
+          <button id="change-pwd-btn" class="icon-btn" title="تغيير كلمة السر">🔑</button>
           <button id="contact-btn" class="icon-btn" title="اتصل بنا">✉️</button>
           <button id="share-btn" class="icon-btn" title="مشاركة التطبيق">🔗</button>
           <button id="theme-toggle" class="icon-btn" title="الوضع الليلي/النهاري">🌙</button>
@@ -273,6 +299,39 @@
       <small style="opacity:0.8;">mohsen</small>
     </footer>
   </section>
+
+  <!-- نافذة تغيير كلمة السر (داخل التطبيق) -->
+  <div id="inapp-pwd-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" style="max-width:420px;">
+      <div class="modal-head">
+        <h3>🔑 تغيير كلمة السر</h3>
+        <button class="icon-btn" id="inapp-pwd-close" aria-label="إغلاق">✖</button>
+      </div>
+      <form id="inapp-pwd-form" style="padding:0 4px;" autocomplete="off">
+        <label style="display:block;margin-bottom:12px;">
+          <span style="font-weight:600;display:block;margin-bottom:6px;">كلمة السر الحالية</span>
+          <div class="pwd-wrap">
+            <input type="password" name="old_password" required placeholder="••••••••" />
+            <button type="button" class="toggle-pwd" aria-label="إظهار/إخفاء">👁️</button>
+          </div>
+        </label>
+        <label style="display:block;margin-bottom:12px;">
+          <span style="font-weight:600;display:block;margin-bottom:6px;">كلمة السر الجديدة</span>
+          <div class="pwd-wrap">
+            <input type="password" name="new_password" required minlength="4" placeholder="4 أحرف على الأقل" />
+            <button type="button" class="toggle-pwd" aria-label="إظهار/إخفاء">👁️</button>
+          </div>
+        </label>
+        <label style="display:block;margin-bottom:16px;">
+          <span style="font-weight:600;display:block;margin-bottom:6px;">تأكيد كلمة السر الجديدة</span>
+          <input type="password" name="new_password2" required minlength="4" placeholder="أعد كتابة كلمة السر الجديدة" style="width:100%;" />
+        </label>
+        <button type="submit" class="btn primary block">حفظ كلمة السر الجديدة</button>
+        <p id="inapp-pwd-msg" class="form-msg" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
 
   <!-- Toast -->
   <div id="toast" class="toast"></div>

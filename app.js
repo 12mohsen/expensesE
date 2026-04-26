@@ -251,6 +251,21 @@ const DB = {
       return true;
     }
   },
+  async updatePassword(username, newPasswordHash) {
+    if (this.isConnected()) {
+      try {
+        const { error } = await sb.from('users').update({ password_hash: newPasswordHash }).eq('username', username);
+        if (error) { console.error('خطأ في تحديث كلمة السر:', error); return false; }
+        return true;
+      } catch (e) { console.error(e); return false; }
+    } else {
+      const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
+      if (!users[username]) return false;
+      users[username].password = newPasswordHash;
+      localStorage.setItem(LS_USERS, JSON.stringify(users));
+      return true;
+    }
+  },
   async deleteAllExpenses(username) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
@@ -372,10 +387,60 @@ $('#hint-form').addEventListener('submit', async (e) => {
     const user = await DB.getUser(username);
     if (!user) return formMsg(f, 'لا يوجد حساب بهذا الاسم.', 'error');
     formMsg(f, `💡 التلميح: ${user.hint}`, 'info');
+    // إظهار قسم تغيير كلمة السر
+    const section = $('#change-pwd-section');
+    section.style.display = 'block';
+    section.dataset.username = username;
+    $('#change-pwd-msg').textContent = '';
+    $('#change-pwd-msg').className = 'form-msg';
   } catch (err) {
     console.error(err);
     formMsg(f, 'خطأ: ' + err.message, 'error');
   }
+});
+
+// تغيير كلمة السر من شاشة المصادقة
+$('#do-change-pwd-btn').addEventListener('click', async () => {
+  const section = $('#change-pwd-section');
+  const username = section.dataset.username;
+  const msgEl = $('#change-pwd-msg');
+  const f = $('#hint-form');
+
+  const oldPwd = f.querySelector('[name=old_password]').value;
+  const newPwd = f.querySelector('[name=new_password]').value;
+  const newPwd2 = f.querySelector('[name=new_password2]').value;
+
+  msgEl.textContent = '';
+  msgEl.className = 'form-msg';
+
+  if (!oldPwd) { msgEl.textContent = 'أدخل كلمة السر الحالية.'; msgEl.className = 'form-msg error'; return; }
+  if (!newPwd || newPwd.length < 4) { msgEl.textContent = 'كلمة السر الجديدة قصيرة (4 أحرف على الأقل).'; msgEl.className = 'form-msg error'; return; }
+  if (newPwd !== newPwd2) { msgEl.textContent = 'كلمتا السر الجديدة غير متطابقتين.'; msgEl.className = 'form-msg error'; return; }
+
+  msgEl.textContent = '⏳ جاري التحقق...'; msgEl.className = 'form-msg info';
+
+  const user = await DB.getUser(username);
+  if (!user) { msgEl.textContent = 'خطأ: لم يُعثر على الحساب.'; msgEl.className = 'form-msg error'; return; }
+
+  const oldHash = await hash(oldPwd);
+  const storedHash = user.password_hash || user.password;
+  if (storedHash !== oldHash) { msgEl.textContent = 'كلمة السر الحالية غير صحيحة.'; msgEl.className = 'form-msg error'; return; }
+
+  const newHash = await hash(newPwd);
+  const ok = await DB.updatePassword(username, newHash);
+  if (!ok) { msgEl.textContent = 'حدث خطأ أثناء التحديث.'; msgEl.className = 'form-msg error'; return; }
+
+  // تحديث كلمة السر المحفوظة إن كانت موجودة
+  if (localStorage.getItem('dm_saved_username') === username) {
+    localStorage.setItem('dm_saved_password', newPwd);
+  }
+
+  msgEl.textContent = '✅ تم تغيير كلمة السر بنجاح! يمكنك تسجيل الدخول الآن.';
+  msgEl.className = 'form-msg success';
+  f.querySelector('[name=old_password]').value = '';
+  f.querySelector('[name=new_password]').value = '';
+  f.querySelector('[name=new_password2]').value = '';
+  setTimeout(() => { section.style.display = 'none'; switchTab('login'); }, 2500);
 });
 
 // ============================================================
@@ -1026,6 +1091,68 @@ $('#budget-clear').addEventListener('click', () => {
   localStorage.removeItem(getSpentKey());
   localStorage.removeItem(getBudgetStartKey());
   toast('تم مسح الميزانية');
+});
+
+// ============================================================
+// تغيير كلمة السر (داخل التطبيق)
+// ============================================================
+$('#change-pwd-btn').addEventListener('click', () => {
+  const modal = $('#inapp-pwd-modal');
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+  $('#inapp-pwd-msg').textContent = '';
+  $('#inapp-pwd-msg').className = 'form-msg';
+  $('#inapp-pwd-form').reset();
+});
+
+function closeInappPwdModal() {
+  const modal = $('#inapp-pwd-modal');
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  $('#inapp-pwd-form').reset();
+  $('#inapp-pwd-msg').textContent = '';
+  $('#inapp-pwd-msg').className = 'form-msg';
+}
+
+$('#inapp-pwd-close').addEventListener('click', closeInappPwdModal);
+$('#inapp-pwd-modal .modal-backdrop').addEventListener('click', closeInappPwdModal);
+
+$('#inapp-pwd-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const msgEl = $('#inapp-pwd-msg');
+  const d = Object.fromEntries(new FormData(f));
+
+  msgEl.textContent = '';
+  msgEl.className = 'form-msg';
+
+  if (!d.old_password) { msgEl.textContent = 'أدخل كلمة السر الحالية.'; msgEl.className = 'form-msg error'; return; }
+  if (!d.new_password || d.new_password.length < 4) { msgEl.textContent = 'كلمة السر الجديدة قصيرة جداً (4 أحرف على الأقل).'; msgEl.className = 'form-msg error'; return; }
+  if (d.new_password !== d.new_password2) { msgEl.textContent = 'كلمتا السر الجديدة غير متطابقتين.'; msgEl.className = 'form-msg error'; return; }
+  if (d.old_password === d.new_password) { msgEl.textContent = 'كلمة السر الجديدة مطابقة للحالية، اختر كلمة مختلفة.'; msgEl.className = 'form-msg error'; return; }
+
+  msgEl.textContent = '⏳ جاري التحقق...'; msgEl.className = 'form-msg info';
+
+  const user = await DB.getUser(currentUser);
+  if (!user) { msgEl.textContent = 'خطأ: لم يُعثر على الحساب.'; msgEl.className = 'form-msg error'; return; }
+
+  const oldHash = await hash(d.old_password);
+  const storedHash = user.password_hash || user.password;
+  if (storedHash !== oldHash) { msgEl.textContent = 'كلمة السر الحالية غير صحيحة.'; msgEl.className = 'form-msg error'; return; }
+
+  const newHash = await hash(d.new_password);
+  const ok = await DB.updatePassword(currentUser, newHash);
+  if (!ok) { msgEl.textContent = 'حدث خطأ أثناء الحفظ، حاول مرة أخرى.'; msgEl.className = 'form-msg error'; return; }
+
+  // تحديث كلمة السر المحفوظة
+  if (localStorage.getItem('dm_saved_username') === currentUser) {
+    localStorage.setItem('dm_saved_password', d.new_password);
+  }
+
+  msgEl.textContent = '✅ تم تغيير كلمة السر بنجاح!';
+  msgEl.className = 'form-msg success';
+  toast('تم تغيير كلمة السر ✅', 'success');
+  setTimeout(closeInappPwdModal, 2000);
 });
 
 // ============================================================

@@ -1,5 +1,5 @@
 /* سلة المحذوفات */
-.modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 10px; }
 .modal.hidden { display: none; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(15, 18, 38, 0.6); backdrop-filter: blur(4px); }
 .modal-card { position: relative; background: var(--bg-2); color: var(--text); border-radius: var(--radius); padding: 24px; max-width: 860px; width: 100%; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow); border: 1px solid var(--border); }
@@ -7,8 +7,8 @@
 .modal-head h3 { margin: 0; }
 .modal-foot { margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px; }
 .muted { color: var(--muted); font-size: 14px; margin: 4px 0 12px; }
-.trash-wrap { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 200px; }
-.trash-wrap table { width: 100%; border-collapse: collapse; }
+.trash-wrap { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 200px; -webkit-overflow-scrolling: touch; }
+.trash-wrap table { width: 100%; border-collapse: collapse; min-width: 550px; }
 .trash-wrap th, .trash-wrap td { padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border); font-size: 14px; }
 .trash-wrap th { background: var(--bg); position: sticky; top: 0; }
 .trash-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -242,7 +242,8 @@ textarea { resize: vertical; }
 @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
 
 /* جدول مع شريط تمرير جانبي */
-.table-wrap { overflow: auto; max-height: 400px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.table-wrap { overflow: auto; max-height: 400px; border: 1px solid var(--border); border-radius: var(--radius-sm); -webkit-overflow-scrolling: touch; }
+.table-wrap table { min-width: 600px; }
 .table-wrap::-webkit-scrollbar { width: 10px; height: 10px; }
 .table-wrap::-webkit-scrollbar-track { background: var(--bg); border-radius: 8px; }
 .table-wrap::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 8px; }
@@ -583,4 +584,375 @@ tbody tr:hover { background: color-mix(in oklab, var(--primary) 8%, transparent)
 }
 .month-progress span.over {
   background: var(--danger);
+}
+
+/* ============ قسم تغيير كلمة السر ============ */
+#change-pwd-section label {
+  display: block;
+  margin-bottom: 12px;
+}
+#change-pwd-section label span {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+#change-pwd-section input[type=password] {
+  width: 100%;
+}
+#inapp-pwd-form label span {
+  font-size: 14px;
+}
+
+/* ============ تحسينات الأجهزة المحمولة ============ */
+@media (max-width: 768px) {
+  /* تحسين الخلفية المتحركة */
+  .blob {
+    filter: blur(60px);
+    opacity: 0.4;
+  }
+  .b1 { width: 300px; height: 300px; top: -80px; right: -60px; }
+  .b2 { width: 260px; height: 260px; bottom: -80px; left: -60px; }
+  .b3 { width: 200px; height: 200px; opacity: 0.25; }
+
+  /* تحسين شاشة المصادقة */
+  .auth-screen {
+    padding: 12px;
+    align-items: flex-start;
+    min-height: 100dvh;
+  }
+  .auth-card {
+    max-width: 100%;
+    padding: 24px 16px;
+    border-radius: 20px;
+  }
+  .brand h1 {
+    font-size: 24px;
+  }
+  .brand .logo {
+    width: 60px;
+    height: 60px;
+    font-size: 32px;
+    border-radius: 18px;
+  }
+
+  /* تحسين التبويبات */
+  .tabs {
+    gap: 4px;
+    padding: 4px;
+  }
+  .tab {
+    padding: 10px 6px;
+    font-size: 12px;
+  }
+
+  /* تحسين المدخلات */
+  input, select, textarea {
+    padding: 14px 12px;
+    font-size: 16px; /* يمنع التكبير التلقائي على iOS */
+    border-radius: 12px;
+  }
+  .pwd-wrap input {
+    padding-inline-start: 44px;
+  }
+
+  /* تحسين الأزرار */
+  .btn {
+    padding: 14px 18px;
+    font-size: 16px;
+    min-height: 48px;
+  }
+  .btn.small {
+    padding: 10px 14px;
+    font-size: 14px;
+    min-height: 40px;
+  }
+
+  /* تحسين رأس التطبيق */
+  .app-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+  }
+  .header-inner {
+    padding: 10px 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header-brand h2 {
+    font-size: 16px;
+  }
+  .header-brand small {
+    font-size: 12px;
+  }
+  .logo-sm {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+    border-radius: 10px;
+  }
+
+  /* تقليل عدد الأزرار الظاهرة في الهيدر */
+  .header-actions {
+    gap: 6px;
+  }
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+
+  /* إضافة مسافة للمحتوى أسفل الهيدر الثابت */
+  .container {
+    padding: 70px 12px 80px;
+  }
+
+  /* تحسين بطاقات الإحصائيات */
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .stat-card {
+    padding: 14px 12px;
+    flex-direction: column;
+    text-align: center;
+    gap: 10px;
+  }
+  .stat-icon {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+    border-radius: 12px;
+  }
+  .stat-card small {
+    font-size: 11px;
+  }
+  .stat-card strong {
+    font-size: 16px;
+  }
+
+  /* تحسين البطاقات المزدوجة */
+  .grid-2 {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .panel {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  /* تحسين صفوف النماذج */
+  .row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  /* تحسين حقل الميزانية */
+  .budget-bar {
+    padding: 14px 16px;
+  }
+  .budget-input-wrap {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .budget-input-wrap input {
+    max-width: 100%;
+  }
+  .budget-status {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .budget-progress-wrap {
+    width: 100%;
+    min-width: unset;
+  }
+
+  /* تحسين لوحة الرأس */
+  .panel-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .panel-head h3 {
+    font-size: 15px;
+  }
+  .filters {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .filters input, .filters select {
+    flex: 1;
+    min-width: 120px;
+    padding: 10px 12px;
+  }
+  .cat-sum {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  /* تحسين الجداول للشاشات الصغيرة */
+  .table-wrap {
+    max-height: 50vh;
+    border-radius: 12px;
+    background: linear-gradient(to left, var(--bg-2) 0%, transparent 30px);
+    background-size: 40px 100%;
+    background-repeat: no-repeat;
+    background-position: right center;
+  }
+  table {
+    font-size: 13px;
+  }
+  th, td {
+    padding: 10px 8px;
+    font-size: 13px;
+  }
+  .row-actions {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .row-actions button {
+    padding: 6px;
+    font-size: 14px;
+  }
+  .tag {
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+
+  /* تحسين مخطط التصنيفات */
+  .chart-scroll {
+    max-height: 250px;
+  }
+
+  /* تحسين ملخص الأشهر */
+  .months-row {
+    gap: 10px;
+    padding-bottom: 12px;
+  }
+  .month-card {
+    min-width: 160px;
+    max-width: 200px;
+    padding: 14px;
+  }
+  .month-name {
+    font-size: 15px;
+  }
+  .month-total {
+    font-size: 20px;
+  }
+  .month-meta {
+    font-size: 12px;
+    gap: 8px;
+  }
+  .year-title {
+    font-size: 14px;
+  }
+
+  /* تحسين النماذج المنبثقة */
+  .modal-card {
+    max-width: 95%;
+    max-height: 90vh;
+    padding: 20px 16px;
+    border-radius: 20px;
+    margin: 10px;
+  }
+  .modal-head h3 {
+    font-size: 16px;
+  }
+
+  /* تحسين Toast */
+  .toast {
+    font-size: 14px;
+    padding: 14px 20px;
+    bottom: 20px;
+  }
+
+  /* تحسين سلة المحذوفات */
+  .trash-wrap th, .trash-wrap td {
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+}
+
+/* تحسينات إضافية للشاشات الصغيرة جداً */
+@media (max-width: 480px) {
+  .stats {
+    grid-template-columns: 1fr;
+  }
+  .stat-card {
+    flex-direction: row;
+    text-align: start;
+    padding: 12px 14px;
+  }
+  .tab {
+    font-size: 11px;
+    padding: 10px 4px;
+  }
+  .header-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .header-actions .btn.ghost {
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+  th, td {
+    font-size: 12px;
+    padding: 8px 6px;
+  }
+  th {
+    font-size: 10px;
+  }
+}
+
+/* تحسينات للأجهزة اللوحية */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .container {
+    padding: 24px 16px 60px;
+  }
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* تحسين دعم الشاشات العريضة جداً */
+@media (min-width: 1400px) {
+  .header-inner, .container {
+    max-width: 1350px;
+  }
+  .grid-2 {
+    gap: 24px;
+  }
+}
+
+/* تحسين السكرولبار على الجوالات */
+@media (hover: none) and (pointer: coarse) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .table-wrap, .trash-wrap, .chart-scroll, .months-row {
+    scrollbar-width: thin;
+  }
+}
+
+/* تحسين الـ safe area للأجهزة ذات الشاشات الكاملة */
+@supports (padding: max(0px)) {
+  .app-header {
+    padding-top: env(safe-area-inset-top);
+  }
+  .container {
+    padding-bottom: max(60px, env(safe-area-inset-bottom));
+  }
+  .toast {
+    bottom: max(24px, env(safe-area-inset-bottom));
+  }
 }
