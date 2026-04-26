@@ -5,10 +5,10 @@
 .modal-card { position: relative; background: var(--bg-2); color: var(--text); border-radius: var(--radius); padding: 24px; max-width: 860px; width: 100%; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow); border: 1px solid var(--border); }
 .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .modal-head h3 { margin: 0; }
-.modal-foot { margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px; }
+.modal-foot { margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .muted { color: var(--muted); font-size: 14px; margin: 4px 0 12px; }
 .trash-wrap { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 200px; -webkit-overflow-scrolling: touch; }
-.trash-wrap table { width: 100%; border-collapse: collapse; min-width: 550px; }
+.trash-wrap table { width: 100%; border-collapse: collapse; min-width: 600px; }
 .trash-wrap th, .trash-wrap td { padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border); font-size: 14px; }
 .trash-wrap th { background: var(--bg); position: sticky; top: 0; }
 .trash-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -262,6 +262,32 @@ tbody tr:hover { background: color-mix(in oklab, var(--primary) 8%, transparent)
 .row-actions { display: flex; gap: 6px; }
 .row-actions button { border: 0; background: transparent; cursor: pointer; font-size: 16px; padding: 4px 6px; border-radius: 6px; }
 .row-actions button:hover { background: var(--bg); }
+
+/* خانات الاختيار في الجدول */
+.row-check, #select-all, .trash-check, #trash-select-all {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+#select-all, #trash-select-all {
+  width: 20px;
+  height: 20px;
+}
+th:has(#select-all), th:has(#trash-select-all) {
+  width: 40px;
+  text-align: center;
+}
+td:has(.row-check), td:has(.trash-check) {
+  text-align: center;
+  vertical-align: middle;
+}
+#delete-selected, #trash-restore-selected, #trash-purge-selected {
+  transition: opacity 0.2s, transform 0.2s;
+}
+#delete-selected:hover, #trash-restore-selected:hover, #trash-purge-selected:hover {
+  transform: translateY(-1px);
+}
 
 .empty { color: var(--muted); text-align: center; padding: 30px 10px; }
 
@@ -877,6 +903,34 @@ tbody tr:hover { background: color-mix(in oklab, var(--primary) 8%, transparent)
   .trash-wrap th, .trash-wrap td {
     padding: 8px 6px;
     font-size: 12px;
+  }
+
+  /* تحسين خانات الاختيار في الجوال */
+  .row-check, #select-all, .trash-check, #trash-select-all {
+    width: 20px;
+    height: 20px;
+  }
+  th:has(#select-all), th:has(#trash-select-all) {
+    width: 36px;
+    min-width: 36px;
+    padding: 10px 4px;
+  }
+  td:has(.row-check), td:has(.trash-check) {
+    width: 36px;
+    min-width: 36px;
+    padding: 10px 4px;
+  }
+  #delete-selected, #trash-restore-selected, #trash-purge-selected {
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+  .modal-foot {
+    justify-content: center;
+    gap: 6px;
+  }
+  .modal-foot .btn {
+    flex: 1;
+    min-width: 120px;
   }
 }
 

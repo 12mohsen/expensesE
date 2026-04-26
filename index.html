@@ -271,6 +271,7 @@
             </select>
             <span id="cat-sum" class="cat-sum" style="display:none;">المجموع: <b>0</b></span>
             <button id="trash-btn" class="btn ghost small" title="سلة المحذوفات">🗑️ المحذوفات <span id="trash-count" class="badge" style="display:none;">0</span></button>
+            <button id="delete-selected" class="btn danger small" style="display:none;">🗑️ حذف المحدد</button>
             <button id="clear-all" class="btn danger small">حذف الكل</button>
           </div>
         </div>
@@ -278,6 +279,7 @@
           <table id="expense-table">
             <thead>
               <tr>
+                <th><input type="checkbox" id="select-all" title="اختيار الكل" /></th>
                 <th>التاريخ</th>
                 <th>الوصف</th>
                 <th>التصنيف</th>
@@ -349,6 +351,7 @@
         <table id="trash-table">
           <thead>
             <tr>
+              <th><input type="checkbox" id="trash-select-all" title="اختيار الكل" /></th>
               <th>التاريخ</th>
               <th>الوصف</th>
               <th>التصنيف</th>
@@ -362,6 +365,8 @@
         <p id="trash-empty" class="empty">سلة المحذوفات فارغة ✨</p>
       </div>
       <div class="modal-foot">
+        <button id="trash-restore-selected" class="btn secondary small" style="display:none;">♻️ استرجاع المحدد</button>
+        <button id="trash-purge-selected" class="btn danger small" style="display:none;">❌ حذف المحدد نهائياً</button>
         <button id="trash-purge" class="btn danger small">إفراغ السلة</button>
       </div>
     </div>

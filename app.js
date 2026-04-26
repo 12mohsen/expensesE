@@ -266,6 +266,50 @@ const DB = {
       return true;
     }
   },
+  // حذف ناعم جماعي
+  async deleteManyExpenses(ids, username) {
+    const now = new Date().toISOString();
+    if (this.isConnected()) {
+      try {
+        const { error } = await sb.from('expenses').update({ deleted_at: now }).in('id', ids);
+        if (error) console.error('خطأ في الحذف الجماعي:', error);
+        return !error;
+      } catch (e) { console.error(e); return false; }
+    } else {
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      arr = arr.map(x => ids.includes(x.id) ? { ...x, deleted_at: now } : x);
+      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      return true;
+    }
+  },
+  // استرجاع جماعي
+  async restoreManyExpenses(ids, username) {
+    if (this.isConnected()) {
+      try {
+        const { error } = await sb.from('expenses').update({ deleted_at: null }).in('id', ids);
+        return !error;
+      } catch (e) { console.error(e); return false; }
+    } else {
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      arr = arr.map(x => ids.includes(x.id) ? { ...x, deleted_at: null } : x);
+      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      return true;
+    }
+  },
+  // حذف نهائي جماعي
+  async purgeManyExpenses(ids, username) {
+    if (this.isConnected()) {
+      try {
+        const { error } = await sb.from('expenses').delete().in('id', ids);
+        return !error;
+      } catch (e) { console.error(e); return false; }
+    } else {
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      arr = arr.filter(x => !ids.includes(x.id));
+      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      return true;
+    }
+  },
   async deleteAllExpenses(username) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
@@ -480,12 +524,16 @@ async function renderTrash() {
   tbody.innerHTML = '';
   $('#trash-empty').style.display = trash.length ? 'none' : 'block';
   $('#trash-table').style.display = trash.length ? '' : 'none';
+  $('#trash-select-all').checked = false;
+  $('#trash-select-all').indeterminate = false;
+  updateTrashSelectedButtons();
 
   trash.forEach(x => {
     const d = daysLeft(x.deleted_at);
     const warn = d <= 7 ? 'warn' : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td><input type="checkbox" class="trash-check" data-id="${x.id}" /></td>
       <td>${x.date}</td>
       <td><b>${escapeHtml(x.title)}</b></td>
       <td><span class="tag">${escapeHtml(x.category)}</span></td>
@@ -498,6 +546,42 @@ async function renderTrash() {
     `;
     tbody.appendChild(tr);
   });
+
+  // ربط أحداث خانات الاختيار
+  tbody.querySelectorAll('.trash-check').forEach(cb => {
+    cb.addEventListener('change', updateTrashSelectedButtons);
+  });
+}
+
+// ============ تحديث أزرار سلة المحذوفات ============
+function updateTrashSelectedButtons() {
+  const checkedCount = $$('.trash-check:checked').length;
+  const restoreBtn = $('#trash-restore-selected');
+  const purgeBtn = $('#trash-purge-selected');
+  const purgeAllBtn = $('#trash-purge');
+
+  if (checkedCount > 0) {
+    restoreBtn.style.display = 'inline-block';
+    restoreBtn.textContent = `♻️ استرجاع (${checkedCount})`;
+    purgeBtn.style.display = 'inline-block';
+    purgeBtn.textContent = `❌ حذف (${checkedCount})`;
+    purgeAllBtn.style.display = 'none';
+  } else {
+    restoreBtn.style.display = 'none';
+    purgeBtn.style.display = 'none';
+    purgeAllBtn.style.display = 'inline-block';
+  }
+
+  // تحديث حالة اختيار الكل
+  const allCheckboxes = $$('.trash-check');
+  const selectAll = $('#trash-select-all');
+  if (allCheckboxes.length > 0) {
+    selectAll.checked = checkedCount === allCheckboxes.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < allCheckboxes.length;
+  } else {
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+  }
 }
 
 function openTrash() {
@@ -539,8 +623,60 @@ $('#trash-purge').addEventListener('click', async () => {
   const trash = await DB.getTrash(currentUser);
   if (!trash.length) return toast('السلة فارغة');
   if (!confirm('إفراغ السلة نهائياً؟ لا يمكن التراجع.')) return;
-  for (const x of trash) await DB.purgeExpense(x.id, currentUser);
+  const ids = trash.map(x => x.id);
+  const ok = await DB.purgeManyExpenses(ids, currentUser);
+  if (!ok) return toast('خطأ في الحذف', 'error');
   toast('تم إفراغ السلة', 'error');
+  await renderTrash();
+  await updateTrashBadge();
+});
+
+// اختيار الكل في سلة المحذوفات
+$('#trash-select-all').addEventListener('change', (e) => {
+  const isChecked = e.target.checked;
+  $$('.trash-check').forEach(cb => cb.checked = isChecked);
+  updateTrashSelectedButtons();
+});
+
+// استرجاع العناصر المحددة
+$('#trash-restore-selected').addEventListener('click', async () => {
+  const selectedIds = [...$$('.trash-check:checked')].map(cb => cb.dataset.id);
+  if (selectedIds.length === 0) return toast('لم تختر أي عنصر', 'error');
+  if (!confirm(`هل أنت متأكد من استرجاع ${selectedIds.length} عنصر/عناصر؟`)) return;
+
+  const trashItems = await DB.getTrash(currentUser);
+  const restoredAmount = trashItems
+    .filter(x => selectedIds.includes(x.id))
+    .reduce((s, x) => s + x.amount, 0);
+
+  const ok = await DB.restoreManyExpenses(selectedIds, currentUser);
+  if (!ok) return toast('خطأ في الاسترجاع', 'error');
+
+  if (currentBudget > 0 && restoredAmount > 0) {
+    removeFromSpent(restoredAmount);
+  }
+
+  toast(`تم استرجاع ${selectedIds.length} عنصر`, 'success');
+
+  $('#trash-select-all').checked = false;
+  $('#trash-select-all').indeterminate = false;
+  await loadExpenses();
+  await renderTrash();
+  await updateTrashBadge();
+});
+
+// حذف العناصر المحددة نهائياً
+$('#trash-purge-selected').addEventListener('click', async () => {
+  const selectedIds = [...$$('.trash-check:checked')].map(cb => cb.dataset.id);
+  if (selectedIds.length === 0) return toast('لم تختر أي عنصر', 'error');
+  if (!confirm(`حذف ${selectedIds.length} عنصر نهائياً؟ لا يمكن التراجع.`)) return;
+
+  const ok = await DB.purgeManyExpenses(selectedIds, currentUser);
+  if (!ok) return toast('خطأ في الحذف', 'error');
+  toast(`تم حذف ${selectedIds.length} عنصر نهائياً`, 'error');
+
+  $('#trash-select-all').checked = false;
+  $('#trash-select-all').indeterminate = false;
   await renderTrash();
   await updateTrashBadge();
 });
@@ -631,6 +767,59 @@ $('#clear-all').addEventListener('click', async () => {
   const ok = await DB.deleteAllExpenses(currentUser);
   if (!ok) return toast('خطأ في الحذف', 'error');
   toast('تم حذف الكل', 'error');
+  $('#select-all').checked = false;
+  $('#select-all').indeterminate = false;
+  await loadExpenses();
+});
+
+// ============ اختيار وحذف العناصر المحددة ============
+function updateDeleteSelectedButton() {
+  const checkedCount = $$('.row-check:checked').length;
+  const btn = $('#delete-selected');
+  const clearAllBtn = $('#clear-all');
+  if (checkedCount > 0) {
+    btn.style.display = 'inline-block';
+    btn.textContent = `🗑️ حذف (${checkedCount})`;
+    clearAllBtn.style.display = 'none'; // إخفاء حذف الكل عند وجود اختيارات
+  } else {
+    btn.style.display = 'none';
+    clearAllBtn.style.display = 'inline-block'; // إظهار حذف الكل عند عدم وجود اختيارات
+  }
+  // تحديث حالة اختيار الكل
+  const allCheckboxes = $$('.row-check');
+  const selectAll = $('#select-all');
+  if (allCheckboxes.length > 0) {
+    selectAll.checked = checkedCount === allCheckboxes.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < allCheckboxes.length;
+  } else {
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+  }
+}
+
+$('#select-all').addEventListener('change', (e) => {
+  const isChecked = e.target.checked;
+  $$('.row-check').forEach(cb => cb.checked = isChecked);
+  updateDeleteSelectedButton();
+});
+
+$('#delete-selected').addEventListener('click', async () => {
+  const selectedIds = [...$$('.row-check:checked')].map(cb => cb.dataset.id);
+  if (selectedIds.length === 0) return toast('لم تختر أي عنصر', 'error');
+  if (!confirm(`هل أنت متأكد من حذف ${selectedIds.length} عنصر/عناصر؟`)) return;
+
+  if (currentBudget > 0) {
+    const selectedItems = expenses.filter(x => selectedIds.includes(x.id));
+    const totalToRemove = selectedItems.reduce((s, x) => s + x.amount, 0);
+    addToSpent(totalToRemove);
+  }
+
+  const ok = await DB.deleteManyExpenses(selectedIds, currentUser);
+  if (!ok) return toast('خطأ في الحذف', 'error');
+  toast(`تم حذف ${selectedIds.length} عنصر`, 'success');
+
+  $('#select-all').checked = false;
+  $('#select-all').indeterminate = false;
   await loadExpenses();
 });
 
@@ -698,6 +887,7 @@ function render() {
   filtered.forEach(x => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td><input type="checkbox" class="row-check" data-id="${x.id}" /></td>
       <td>${x.date}</td>
       <td><b>${escapeHtml(x.title)}</b></td>
       <td><span class="tag">${escapeHtml(x.category)}</span></td>
@@ -710,6 +900,11 @@ function render() {
       </td>
     `;
     tbody.appendChild(tr);
+  });
+
+  // ربط أحداث خانات الاختيار
+  tbody.querySelectorAll('.row-check').forEach(cb => {
+    cb.addEventListener('change', updateDeleteSelectedButton);
   });
 
   // إحصائيات
