@@ -668,12 +668,10 @@ tbody tr:hover { background: color-mix(in oklab, var(--primary) 8%, transparent)
     min-height: 40px;
   }
 
-  /* تحسين رأس التطبيق */
+  /* تحسين رأس التطبيق - إلغاء الثبات لتفادي حجب المحتوى */
   .app-header {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
+    position: relative;
+    top: auto;
   }
   .header-inner {
     padding: 10px 12px;
@@ -693,20 +691,23 @@ tbody tr:hover { background: color-mix(in oklab, var(--primary) 8%, transparent)
     border-radius: 10px;
   }
 
-  /* تقليل عدد الأزرار الظاهرة في الهيدر */
+  /* تقليل عدد الأزرار الظاهرة في الهيدر وجعلها أصغر */
   .header-actions {
-    gap: 6px;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 70%;
   }
   .icon-btn {
-    width: 40px;
-    height: 40px;
-    font-size: 16px;
-    border-radius: 10px;
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
+    border-radius: 8px;
   }
 
-  /* إضافة مسافة للمحتوى أسفل الهيدر الثابت */
+  /* تقليل المسافة العلوية للمحتوى */
   .container {
-    padding: 70px 12px 80px;
+    padding: 12px 12px 80px;
   }
 
   /* تحسين بطاقات الإحصائيات */
