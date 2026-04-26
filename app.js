@@ -85,16 +85,28 @@ const DB = {
     return sb !== null && !useLocalStorage;
   },
 
-  // المستخدمين
+  // المستخدمين — بحث عالمي (أي تطبيق). يرجّع أول صف فقط.
   async getUser(username) {
     if (this.isConnected()) {
       try {
-        const { data } = await sb.from('users').select('*').eq('username', username).single();
-        return data;
+        const { data } = await sb.from('users').select('*').eq('username', username).limit(1);
+        return (data && data.length) ? data[0] : null;
       } catch (e) { return null; }
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
       return users[username] || null;
+    }
+  },
+  // تحقق عالمي من وجود الاسم (بأي تطبيق) — يرجع app_origin إن وُجد
+  async getAnyUserOrigin(username) {
+    if (this.isConnected()) {
+      try {
+        const { data } = await sb.from('users').select('app_origin').eq('username', username).limit(1);
+        return (data && data.length) ? data[0].app_origin : null;
+      } catch (e) { return null; }
+    } else {
+      const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
+      return users[username] ? (users[username].app_origin || 'local') : null;
     }
   },
   async getUserInApp(username, appOrigin) {
@@ -254,7 +266,7 @@ const DB = {
   async updatePassword(username, newPasswordHash) {
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('users').update({ password_hash: newPasswordHash }).eq('username', username);
+        const { error } = await sb.from('users').update({ password_hash: newPasswordHash }).eq('username', username).eq('app_origin', 'نفقات');
         if (error) { console.error('خطأ في تحديث كلمة السر:', error); return false; }
         return true;
       } catch (e) { console.error(e); return false; }
@@ -357,17 +369,16 @@ $('#register-form').addEventListener('submit', async (e) => {
 
     formMsg(f, '⏳ جاري الإنشاء...', 'info');
 
-    // التحقق من وجود المستخدم في هذا التطبيق فقط
-    const existing = await DB.getUserInApp(username, 'نفقات');
-    if (existing) {
-      // اقتراح أسماء بديلة
+    // التحقق العالمي: الاسم يجب أن يكون غير موجود في أي تطبيق
+    const existingOrigin = await DB.getAnyUserOrigin(username);
+    if (existingOrigin) {
       const suggestions = [
         username + '123',
         username + '_2026',
         username + '_sarf'
       ];
       const suggestionsText = suggestions.join('، ');
-      return formMsg(f, `اسم المستخدم مستخدم مسبقاً في هذا التطبيق. جرب: ${suggestionsText}`, 'error');
+      return formMsg(f, `اسم المستخدم موجود مسبقاً (${existingOrigin}). جرب: ${suggestionsText}`, 'error');
     }
 
     // إنشاء المستخدم
@@ -399,7 +410,7 @@ $('#login-form').addEventListener('submit', async (e) => {
     formMsg(f, '⏳ جاري تسجيل الدخول...', 'info');
 
     const user = await DB.getUserInApp(username, 'نفقات');
-    if (!user) return formMsg(f, 'لا يوجد حساب بهذا الاسم في هذا التطبيق. سجّل حساباً أولاً.', 'error');
+    if (!user) return formMsg(f, 'اسم المستخدم غير مسجّل. سجّل حساباً أولاً.', 'error');
 
     const pwdHash = await hash(d.password);
     const storedHash = user.password_hash || user.password;
@@ -428,8 +439,8 @@ $('#hint-form').addEventListener('submit', async (e) => {
   const f = e.target;
   try {
     const username = new FormData(f).get('username').trim().toLowerCase();
-    const user = await DB.getUser(username);
-    if (!user) return formMsg(f, 'لا يوجد حساب بهذا الاسم.', 'error');
+    const user = await DB.getUserInApp(username, 'نفقات');
+    if (!user) return formMsg(f, 'اسم المستخدم غير مسجّل. سجّل حساباً أولاً.', 'error');
     formMsg(f, `💡 التلميح: ${user.hint}`, 'info');
     // إظهار قسم تغيير كلمة السر
     const section = $('#change-pwd-section');
@@ -463,8 +474,8 @@ $('#do-change-pwd-btn').addEventListener('click', async () => {
 
   msgEl.textContent = '⏳ جاري التحقق...'; msgEl.className = 'form-msg info';
 
-  const user = await DB.getUser(username);
-  if (!user) { msgEl.textContent = 'خطأ: لم يُعثر على الحساب.'; msgEl.className = 'form-msg error'; return; }
+  const user = await DB.getUserInApp(username, 'نفقات');
+  if (!user) { msgEl.textContent = 'خطأ: لم يُعثر على الحساب في هذا التطبيق.'; msgEl.className = 'form-msg error'; return; }
 
   const oldHash = await hash(oldPwd);
   const storedHash = user.password_hash || user.password;
