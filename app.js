@@ -5,7 +5,7 @@
 // ⚙️ إعدادات Supabase
 const SUPABASE_URL = 'https://tvbuvwjkojhqcxhyehfs.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2YnV2d2prb2pocWN4aHllaGZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDE4MTUsImV4cCI6MjA5MjI3NzgxNX0.egwryYwKu_Bicl_koaYXaKGBoxz42c6k4VkMD9aZSWQ';
-
+const CREATED_FROM = "expenses";
 // التحقق من إعدادات Supabase
 let sb = null;
 let useLocalStorage = false;
@@ -85,46 +85,34 @@ const DB = {
     return sb !== null && !useLocalStorage;
   },
 
-  // المستخدمين — بحث عالمي (أي تطبيق). يرجّع أول صف فقط.
-  async getUser(username) {
+  // المستخدمين — بحث عالمي (بدون فلتر created_from). يرجّع أول صف فقط.
+  async getUser(userId) {
     if (this.isConnected()) {
       try {
-        const { data } = await sb.from('users').select('*').eq('username', username).limit(1);
+        const { data } = await sb.from('users').select('*').eq('user_id', userId).limit(1);
         return (data && data.length) ? data[0] : null;
       } catch (e) { return null; }
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
-      return users[username] || null;
+      return users[userId] || null;
     }
   },
-  // تحقق عالمي من وجود الاسم (بأي تطبيق) — يرجع app_origin إن وُجد
-  async getAnyUserOrigin(username) {
+  // تحقق عالمي من وجود الاسم (بأي تطبيق) — يرجع created_from إن وُجد
+  async getAnyUserOrigin(userId) {
     if (this.isConnected()) {
       try {
-        const { data } = await sb.from('users').select('app_origin').eq('username', username).limit(1);
-        return (data && data.length) ? data[0].app_origin : null;
+        const { data } = await sb.from('users').select('created_from').eq('user_id', userId).limit(1);
+        return (data && data.length) ? data[0].created_from : null;
       } catch (e) { return null; }
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
-      return users[username] ? (users[username].app_origin || 'local') : null;
+      return users[userId] ? (users[userId].created_from || 'local') : null;
     }
   },
-  async getUserInApp(username, appOrigin) {
+  async createUser(userId, passHash, hint) {
     if (this.isConnected()) {
       try {
-        const { data } = await sb.from('users').select('*').eq('username', username).eq('app_origin', appOrigin).single();
-        return data;
-      } catch (e) { return null; }
-    } else {
-      const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
-      const user = users[username] || null;
-      return user && user.app_origin === appOrigin ? user : null;
-    }
-  },
-  async createUser(username, password_hash, hint) {
-    if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('users').insert({ username, password_hash, hint, app_origin: 'نفقات' });
+        const { error } = await sb.from('users').insert({ user_id: userId, pass_hash: passHash, hint, created_from: CREATED_FROM });
         if (error) {
           console.error('خطأ في إنشاء المستخدم:', error);
           // إرجاع تفاصيل الخطأ لمعالجته في الواجهة
@@ -139,82 +127,82 @@ const DB = {
       }
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
-      if (users[username]) return { success: false, error: { code: 'duplicate' } };
-      users[username] = { password: password_hash, hint };
+      if (users[userId]) return { success: false, error: { code: 'duplicate' } };
+      users[userId] = { password: passHash, hint, created_from: CREATED_FROM };
       localStorage.setItem(LS_USERS, JSON.stringify(users));
       return { success: true };
     }
   },
 
   // المصاريف (النشطة فقط)
-  async getExpenses(username) {
+  async getExpenses(user_id) {
     if (this.isConnected()) {
       try {
-        const { data, error } = await sb.from('expenses').select('*').eq('username', username).is('deleted_at', null).order('date', { ascending: false });
+        const { data, error } = await sb.from('expenses').select('*').eq('user_id', user_id).is('deleted_at', null).order('date', { ascending: false });
         if (error) { console.error(error); toast('خطأ في تحميل البيانات', 'error'); return []; }
         return data || [];
       } catch (e) { console.error(e); return []; }
     } else {
-      const arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      const arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       return arr.filter(x => !x.deleted_at);
     }
   },
 
   // المحذوفات (خلال 30 يوم)
-  async getTrash(username) {
+  async getTrash(user_id) {
     if (this.isConnected()) {
       try {
-        const { data, error } = await sb.from('expenses').select('*').eq('username', username).not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
+        const { data, error } = await sb.from('expenses').select('*').eq('user_id', user_id).not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
         if (error) { console.error(error); return []; }
         return data || [];
       } catch (e) { console.error(e); return []; }
     } else {
-      const arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      const arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       return arr.filter(x => x.deleted_at);
     }
   },
 
   // استرجاع
-  async restoreExpense(id, username) {
+  async restoreExpense(id, user_id) {
     if (this.isConnected()) {
       try {
         const { error } = await sb.from('expenses').update({ deleted_at: null }).eq('id', id);
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
-      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.map(x => x.id === id ? { ...x, deleted_at: null } : x);
-      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
       return true;
     }
   },
 
   // حذف نهائي من السلة
-  async purgeExpense(id, username) {
+  async purgeExpense(id, user_id) {
     if (this.isConnected()) {
       try {
         const { error } = await sb.from('expenses').delete().eq('id', id);
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
-      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.filter(x => x.id !== id);
-      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
       return true;
     }
   },
 
   // تنظيف تلقائي للعناصر الأقدم من 30 يوم
-  async purgeOldTrash(username) {
+  async purgeOldTrash(user_id) {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     if (this.isConnected()) {
       try {
-        await sb.from('expenses').delete().eq('username', username).not('deleted_at', 'is', null).lt('deleted_at', cutoff);
+        await sb.from('expenses').delete().eq('user_id', user_id).not('deleted_at', 'is', null).lt('deleted_at', cutoff);
       } catch (e) { console.error(e); }
     } else {
-      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.filter(x => !x.deleted_at || x.deleted_at >= cutoff);
-      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
     }
   },
   async addExpense(item) {
@@ -226,10 +214,10 @@ const DB = {
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
-      let arr = JSON.parse(localStorage.getItem(LS_EXP(item.username)) || '[]');
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(item.user_id)) || '[]');
       item.id = uid();
       arr.unshift(item);
-      localStorage.setItem(LS_EXP(item.username), JSON.stringify(arr));
+      localStorage.setItem(LS_EXP(item.user_id), JSON.stringify(arr));
       return true;
     }
   },
@@ -241,14 +229,14 @@ const DB = {
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
-      let arr = JSON.parse(localStorage.getItem(LS_EXP(item.username)) || '[]');
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(item.user_id)) || '[]');
       arr = arr.map(x => x.id === id ? { ...item, id } : x);
-      localStorage.setItem(LS_EXP(item.username), JSON.stringify(arr));
+      localStorage.setItem(LS_EXP(item.user_id), JSON.stringify(arr));
       return true;
     }
   },
   // حذف ناعم (نقل للسلة)
-  async deleteExpense(id, username) {
+  async deleteExpense(id, user_id) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
       try {
@@ -257,29 +245,29 @@ const DB = {
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
-      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.map(x => x.id === id ? { ...x, deleted_at: now } : x);
-      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
       return true;
     }
   },
-  async updatePassword(username, newPasswordHash) {
+  async updatePassword(userId, newPassHash) {
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('users').update({ password_hash: newPasswordHash }).eq('username', username).eq('app_origin', 'نفقات');
+        const { error } = await sb.from('users').update({ pass_hash: newPassHash }).eq('user_id', userId);
         if (error) { console.error('خطأ في تحديث كلمة السر:', error); return false; }
         return true;
       } catch (e) { console.error(e); return false; }
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
-      if (!users[username]) return false;
-      users[username].password = newPasswordHash;
+      if (!users[userId]) return false;
+      users[userId].password = newPassHash;
       localStorage.setItem(LS_USERS, JSON.stringify(users));
       return true;
     }
   },
   // حذف ناعم جماعي
-  async deleteManyExpenses(ids, username) {
+  async deleteManyExpenses(ids, user_id) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
       try {
@@ -288,52 +276,52 @@ const DB = {
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
-      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.map(x => ids.includes(x.id) ? { ...x, deleted_at: now } : x);
-      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
       return true;
     }
   },
   // استرجاع جماعي
-  async restoreManyExpenses(ids, username) {
+  async restoreManyExpenses(ids, user_id) {
     if (this.isConnected()) {
       try {
         const { error } = await sb.from('expenses').update({ deleted_at: null }).in('id', ids);
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
-      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.map(x => ids.includes(x.id) ? { ...x, deleted_at: null } : x);
-      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
       return true;
     }
   },
   // حذف نهائي جماعي
-  async purgeManyExpenses(ids, username) {
+  async purgeManyExpenses(ids, user_id) {
     if (this.isConnected()) {
       try {
         const { error } = await sb.from('expenses').delete().in('id', ids);
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
-      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.filter(x => !ids.includes(x.id));
-      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
       return true;
     }
   },
-  async deleteAllExpenses(username) {
+  async deleteAllExpenses(user_id) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('expenses').update({ deleted_at: now }).eq('username', username).is('deleted_at', null);
+        const { error } = await sb.from('expenses').update({ deleted_at: now }).eq('user_id', user_id).is('deleted_at', null);
         if (error) console.error('خطأ في حذف جميع المصاريف:', error);
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
-      let arr = JSON.parse(localStorage.getItem(LS_EXP(username)) || '[]');
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.map(x => x.deleted_at ? x : { ...x, deleted_at: now });
-      localStorage.setItem(LS_EXP(username), JSON.stringify(arr));
+      localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
       return true;
     }
   }
@@ -362,27 +350,27 @@ $('#register-form').addEventListener('submit', async (e) => {
   const f = e.target;
   try {
     const d = Object.fromEntries(new FormData(f));
-    const username = d.username.trim().toLowerCase();
-    if (username.length < 3) return formMsg(f, 'اسم المستخدم قصير جداً.', 'error');
+    const user_id = d.username.trim().toLowerCase();
+    if (user_id.length < 3) return formMsg(f, 'اسم المستخدم قصير جداً.', 'error');
     if (d.password !== d.password2) return formMsg(f, 'كلمتا السر غير متطابقتين.', 'error');
     if (!d.hint.trim()) return formMsg(f, 'التلميح مطلوب.', 'error');
 
     formMsg(f, '⏳ جاري الإنشاء...', 'info');
 
     // التحقق العالمي: الاسم يجب أن يكون غير موجود في أي تطبيق
-    const existingOrigin = await DB.getAnyUserOrigin(username);
+    const existingOrigin = await DB.getAnyUserOrigin(user_id);
     if (existingOrigin) {
       const suggestions = [
-        username + '123',
-        username + '_2026',
-        username + '_sarf'
+        user_id + '123',
+        user_id + '_2026',
+        user_id + '_sarf'
       ];
       const suggestionsText = suggestions.join('، ');
-      return formMsg(f, `اسم المستخدم موجود مسبقاً (${existingOrigin}). جرب: ${suggestionsText}`, 'error');
+      return formMsg(f, `هذا الاسم محجوز. جرب: ${suggestionsText}`, 'error');
     }
 
     // إنشاء المستخدم
-    const result = await DB.createUser(username, await hash(d.password), d.hint.trim());
+    const result = await DB.createUser(user_id, await hash(d.password), d.hint.trim());
     if (!result.success) {
       if (result.error?.code === '23505' || result.error?.code === 'duplicate' || result.error?.message?.includes('duplicate')) {
         return formMsg(f, 'اسم المستخدم موجود مسبقاً في هذا التطبيق.', 'error');
@@ -391,7 +379,7 @@ $('#register-form').addEventListener('submit', async (e) => {
     }
 
     formMsg(f, 'تم إنشاء الحساب! جاري تسجيل الدخول...', 'success');
-    localStorage.setItem('dm_session_user', username);
+    localStorage.setItem('dm_session_user', user_id);
     localStorage.setItem('dm_remember', '1');
     setTimeout(enterApp, 700);
   } catch (err) {
@@ -405,25 +393,26 @@ $('#login-form').addEventListener('submit', async (e) => {
   const f = e.target;
   try {
     const d = Object.fromEntries(new FormData(f));
-    const username = d.username.trim().toLowerCase();
+    const user_id = d.username.trim().toLowerCase();
 
     formMsg(f, '⏳ جاري تسجيل الدخول...', 'info');
 
-    const user = await DB.getUserInApp(username, 'نفقات');
+    // تسجيل الدخول عالمي: بدون فلتر created_from لتمكين الدخول لجميع التطبيقات بنفس الحساب
+    const user = await DB.getUser(user_id);
     if (!user) return formMsg(f, 'اسم المستخدم غير مسجّل. سجّل حساباً أولاً.', 'error');
 
     const pwdHash = await hash(d.password);
-    const storedHash = user.password_hash || user.password;
+    const storedHash = user.pass_hash || user.password;
     if (storedHash !== pwdHash) return formMsg(f, 'كلمة السر غير صحيحة.', 'error');
 
     if (d.remember) {
-      localStorage.setItem('dm_session_user', username);
+      localStorage.setItem('dm_session_user', user_id);
       localStorage.setItem('dm_remember', '1');
-      localStorage.setItem('dm_saved_username', username);
+      localStorage.setItem('dm_saved_user_id', user_id);
       localStorage.setItem('dm_saved_password', d.password);
     } else {
-      sessionStorage.setItem('dm_session_user', username);
-      localStorage.removeItem('dm_saved_username');
+      sessionStorage.setItem('dm_session_user', user_id);
+      localStorage.removeItem('dm_saved_user_id');
       localStorage.removeItem('dm_saved_password');
     }
     formMsg(f, 'مرحباً بعودتك!', 'success');
@@ -438,14 +427,14 @@ $('#hint-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
   try {
-    const username = new FormData(f).get('username').trim().toLowerCase();
-    const user = await DB.getUserInApp(username, 'نفقات');
+    const user_id = new FormData(f).get('username').trim().toLowerCase();
+    const user = await DB.getUser(user_id);
     if (!user) return formMsg(f, 'اسم المستخدم غير مسجّل. سجّل حساباً أولاً.', 'error');
     formMsg(f, `💡 التلميح: ${user.hint}`, 'info');
     // إظهار قسم تغيير كلمة السر
     const section = $('#change-pwd-section');
     section.style.display = 'block';
-    section.dataset.username = username;
+    section.dataset.user_id = user_id;
     $('#change-pwd-msg').textContent = '';
     $('#change-pwd-msg').className = 'form-msg';
   } catch (err) {
@@ -457,7 +446,7 @@ $('#hint-form').addEventListener('submit', async (e) => {
 // تغيير كلمة السر من شاشة المصادقة
 $('#do-change-pwd-btn').addEventListener('click', async () => {
   const section = $('#change-pwd-section');
-  const username = section.dataset.username;
+  const user_id = section.dataset.user_id;
   const msgEl = $('#change-pwd-msg');
   const f = $('#hint-form');
 
@@ -474,19 +463,19 @@ $('#do-change-pwd-btn').addEventListener('click', async () => {
 
   msgEl.textContent = '⏳ جاري التحقق...'; msgEl.className = 'form-msg info';
 
-  const user = await DB.getUserInApp(username, 'نفقات');
+  const user = await DB.getUser(user_id);
   if (!user) { msgEl.textContent = 'خطأ: لم يُعثر على الحساب في هذا التطبيق.'; msgEl.className = 'form-msg error'; return; }
 
   const oldHash = await hash(oldPwd);
-  const storedHash = user.password_hash || user.password;
+  const storedHash = user.pass_hash || user.password;
   if (storedHash !== oldHash) { msgEl.textContent = 'كلمة السر الحالية غير صحيحة.'; msgEl.className = 'form-msg error'; return; }
 
   const newHash = await hash(newPwd);
-  const ok = await DB.updatePassword(username, newHash);
+  const ok = await DB.updatePassword(user_id, newHash);
   if (!ok) { msgEl.textContent = 'حدث خطأ أثناء التحديث.'; msgEl.className = 'form-msg error'; return; }
 
   // تحديث كلمة السر المحفوظة إن كانت موجودة
-  if (localStorage.getItem('dm_saved_username') === username) {
+  if (localStorage.getItem('dm_saved_user_id') === user_id) {
     localStorage.setItem('dm_saved_password', newPwd);
   }
 
@@ -737,7 +726,7 @@ $('#expense-form').addEventListener('submit', async (e) => {
   const cat = d.category === '__custom__' ? (d.custom_category?.trim() || 'أخرى') : d.category;
 
   const item = {
-    username: currentUser,
+    user_id: currentUser,
     title: d.title.trim(),
     amount: parseFloat(d.amount) || 0,
     category: cat,
@@ -1343,7 +1332,7 @@ $('#inapp-pwd-form').addEventListener('submit', async (e) => {
   if (!user) { msgEl.textContent = 'خطأ: لم يُعثر على الحساب.'; msgEl.className = 'form-msg error'; return; }
 
   const oldHash = await hash(d.old_password);
-  const storedHash = user.password_hash || user.password;
+  const storedHash = user.pass_hash || user.password;
   if (storedHash !== oldHash) { msgEl.textContent = 'كلمة السر الحالية غير صحيحة.'; msgEl.className = 'form-msg error'; return; }
 
   const newHash = await hash(d.new_password);
@@ -1351,7 +1340,7 @@ $('#inapp-pwd-form').addEventListener('submit', async (e) => {
   if (!ok) { msgEl.textContent = 'حدث خطأ أثناء الحفظ، حاول مرة أخرى.'; msgEl.className = 'form-msg error'; return; }
 
   // تحديث كلمة السر المحفوظة
-  if (localStorage.getItem('dm_saved_username') === currentUser) {
+  if (localStorage.getItem('dm_saved_user_id') === currentUser) {
     localStorage.setItem('dm_saved_password', d.new_password);
   }
 
@@ -1452,17 +1441,17 @@ applyTheme(localStorage.getItem(LS_THEME) || 'dark');
 
 // ملء حقول تسجيل الدخول من البيانات المحفوظة
 (function fillSavedCredentials() {
-  const savedName = localStorage.getItem('dm_saved_username');
+  const savedUserId = localStorage.getItem('dm_saved_user_id');
   const savedPass = localStorage.getItem('dm_saved_password');
-  if (savedName) $('#login-form [name=username]').value = savedName;
+  if (savedUserId) $('#login-form [name=username]').value = savedUserId;
   if (savedPass) $('#login-form [name=password]').value = savedPass;
 })();
 
 async function autoLogin() {
   const savedUser = localStorage.getItem('dm_session_user') || sessionStorage.getItem('dm_session_user');
   if (savedUser) {
-    // التحقق من وجود المستخدم في تطبيق النفقات
-    const user = await DB.getUserInApp(savedUser, 'نفقات');
+    // التحقق من وجود المستخدم (بحث عالمي بدون فلتر created_from)
+    const user = await DB.getUser(savedUser);
     if (user) {
       currentUser = savedUser;
       enterApp();
