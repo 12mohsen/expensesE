@@ -1,16 +1,18 @@
 // ============================================================
-// دفتر المنزل - منطق التطبيق
+// نفقات - منطق التطبيق
 // ============================================================
+
+// ١. هوية التطبيق (ثابت)
+const APP_ORIGIN = 'expenses';
 
 // ⚙️ إعدادات Supabase
 const SUPABASE_URL = 'https://tvbuvwjkojhqcxhyehfs.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2YnV2d2prb2pocWN4aHllaGZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDE4MTUsImV4cCI6MjA5MjI3NzgxNX0.egwryYwKu_Bicl_koaYXaKGBoxz42c6k4VkMD9aZSWQ';
-const CREATED_FROM = "expenses";
-// التحقق من إعدادات Supabase
+
 let sb = null;
 let useLocalStorage = false;
-
 let supabaseReady = false;
+
 function initSupabase() {
   if (!window.supabase) {
     console.log('⏳ انتظار تحميل Supabase...');
@@ -26,11 +28,9 @@ function initSupabase() {
     useLocalStorage = true;
   }
   supabaseReady = true;
-  // تأخير دائم لانتظار تهيئة كل متغيرات التطبيق (let/const غير مرفوعة)
   window.addEventListener('load', () => {
     if (typeof autoLogin === 'function') autoLogin();
   });
-  // احتياط: إذا كان الـ load حدث بالفعل
   if (document.readyState === 'complete') {
     setTimeout(() => { if (typeof autoLogin === 'function') autoLogin(); }, 50);
   }
@@ -63,7 +63,7 @@ function formMsg(form, msg, type = '') {
   el.className = `form-msg ${type}`;
 }
 
-// تجزئة كلمة السر (مع بديل لـ file://)
+// تجزئة كلمة السر
 async function hash(txt) {
   try {
     if (crypto && crypto.subtle) {
@@ -72,7 +72,6 @@ async function hash(txt) {
       return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
     }
   } catch (e) { console.warn('crypto.subtle غير متاح، استخدام بديل'); }
-  // بديل بسيط (djb2 hash)
   let h = 5381;
   for (let i = 0; i < txt.length; i++) h = ((h << 5) + h) + txt.charCodeAt(i);
   return 'djb2_' + (h >>> 0).toString(16) + '_' + txt.length;
@@ -80,12 +79,11 @@ async function hash(txt) {
 
 // ============ وظائف Supabase + LocalStorage ============
 const DB = {
-  // التحقق من الاتصال
   isConnected() {
     return sb !== null && !useLocalStorage;
   },
 
-  // المستخدمين — بحث عالمي (بدون فلتر created_from). يرجّع أول صف فقط.
+  // ٤. تسجيل الدخول العالمي: بحث بدون فلتر created_from
   async getUser(userId) {
     if (this.isConnected()) {
       try {
@@ -97,7 +95,8 @@ const DB = {
       return users[userId] || null;
     }
   },
-  // تحقق عالمي من وجود الاسم (بأي تطبيق) — يرجع created_from إن وُجد
+
+  // ٣. التحقق العالمي من وجود الاسم في أي تطبيق
   async getAnyUserOrigin(userId) {
     if (this.isConnected()) {
       try {
@@ -109,36 +108,44 @@ const DB = {
       return users[userId] ? (users[userId].created_from || 'local') : null;
     }
   },
-  async createUser(userId, passHash, hint) {
+
+  // ٣. إنشاء مستخدم جديد - يكتب APP_ORIGIN في created_from تلقائياً
+  // ملاحظة: لا يوجد عمود hint في جدول users (الأعمدة: user_id, pass_hash, created_from)
+  async createUser(userId, passHash) {
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('users').insert({ user_id: userId, pass_hash: passHash, hint, created_from: CREATED_FROM });
+        const { error } = await sb.from('users').insert({
+          user_id: userId,
+          pass_hash: passHash,
+          created_from: APP_ORIGIN
+        });
         if (error) {
           console.error('خطأ في إنشاء المستخدم:', error);
-          // إرجاع تفاصيل الخطأ لمعالجته في الواجهة
-          const errorObj = error || {};
-          return { success: false, error: errorObj };
+          return { success: false, error: error || {} };
         }
         return { success: true };
       } catch (e) {
         console.error(e);
-        const errorObj = e || {};
-        return { success: false, error: errorObj };
+        return { success: false, error: e || {} };
       }
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
       if (users[userId]) return { success: false, error: { code: 'duplicate' } };
-      users[userId] = { password: passHash, hint, created_from: CREATED_FROM };
+      users[userId] = { password: passHash, created_from: APP_ORIGIN };
       localStorage.setItem(LS_USERS, JSON.stringify(users));
       return { success: true };
     }
   },
 
-  // المصاريف (النشطة فقط)
+  // ٥. فصل البيانات: جلب نفقات المستخدم الحالي فقط بناءً على user_id
   async getExpenses(user_id) {
     if (this.isConnected()) {
       try {
-        const { data, error } = await sb.from('expenses').select('*').eq('user_id', user_id).is('deleted_at', null).order('date', { ascending: false });
+        const { data, error } = await sb.from('expenses')
+          .select('*')
+          .eq('user_id', user_id)
+          .is('deleted_at', null)
+          .order('date', { ascending: false });
         if (error) { console.error(error); toast('خطأ في تحميل البيانات', 'error'); return []; }
         return data || [];
       } catch (e) { console.error(e); return []; }
@@ -148,11 +155,14 @@ const DB = {
     }
   },
 
-  // المحذوفات (خلال 30 يوم)
   async getTrash(user_id) {
     if (this.isConnected()) {
       try {
-        const { data, error } = await sb.from('expenses').select('*').eq('user_id', user_id).not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
+        const { data, error } = await sb.from('expenses')
+          .select('*')
+          .eq('user_id', user_id)
+          .not('deleted_at', 'is', null)
+          .order('deleted_at', { ascending: false });
         if (error) { console.error(error); return []; }
         return data || [];
       } catch (e) { console.error(e); return []; }
@@ -162,7 +172,6 @@ const DB = {
     }
   },
 
-  // استرجاع
   async restoreExpense(id, user_id) {
     if (this.isConnected()) {
       try {
@@ -177,7 +186,6 @@ const DB = {
     }
   },
 
-  // حذف نهائي من السلة
   async purgeExpense(id, user_id) {
     if (this.isConnected()) {
       try {
@@ -192,12 +200,14 @@ const DB = {
     }
   },
 
-  // تنظيف تلقائي للعناصر الأقدم من 30 يوم
   async purgeOldTrash(user_id) {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     if (this.isConnected()) {
       try {
-        await sb.from('expenses').delete().eq('user_id', user_id).not('deleted_at', 'is', null).lt('deleted_at', cutoff);
+        await sb.from('expenses').delete()
+          .eq('user_id', user_id)
+          .not('deleted_at', 'is', null)
+          .lt('deleted_at', cutoff);
       } catch (e) { console.error(e); }
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
@@ -205,6 +215,8 @@ const DB = {
       localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
     }
   },
+
+  // ٧. عند إضافة نفقة: id من نوع uuid يضمن سهولة الحذف من Supabase
   async addExpense(item) {
     if (this.isConnected()) {
       try {
@@ -221,6 +233,7 @@ const DB = {
       return true;
     }
   },
+
   async updateExpense(id, item) {
     if (this.isConnected()) {
       try {
@@ -235,7 +248,7 @@ const DB = {
       return true;
     }
   },
-  // حذف ناعم (نقل للسلة)
+
   async deleteExpense(id, user_id) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
@@ -251,6 +264,7 @@ const DB = {
       return true;
     }
   },
+
   async updatePassword(userId, newPassHash) {
     if (this.isConnected()) {
       try {
@@ -266,7 +280,7 @@ const DB = {
       return true;
     }
   },
-  // حذف ناعم جماعي
+
   async deleteManyExpenses(ids, user_id) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
@@ -282,7 +296,7 @@ const DB = {
       return true;
     }
   },
-  // استرجاع جماعي
+
   async restoreManyExpenses(ids, user_id) {
     if (this.isConnected()) {
       try {
@@ -296,7 +310,7 @@ const DB = {
       return true;
     }
   },
-  // حذف نهائي جماعي
+
   async purgeManyExpenses(ids, user_id) {
     if (this.isConnected()) {
       try {
@@ -310,11 +324,15 @@ const DB = {
       return true;
     }
   },
+
   async deleteAllExpenses(user_id) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('expenses').update({ deleted_at: now }).eq('user_id', user_id).is('deleted_at', null);
+        const { error } = await sb.from('expenses')
+          .update({ deleted_at: now })
+          .eq('user_id', user_id)
+          .is('deleted_at', null);
         if (error) console.error('خطأ في حذف جميع المصاريف:', error);
         return !error;
       } catch (e) { console.error(e); return false; }
@@ -345,6 +363,7 @@ $$('.toggle-pwd').forEach(btn => {
   });
 });
 
+// ٣. تسجيل حساب جديد مع منع التكرار العالمي
 $('#register-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
@@ -353,27 +372,21 @@ $('#register-form').addEventListener('submit', async (e) => {
     const user_id = d.username.trim().toLowerCase();
     if (user_id.length < 3) return formMsg(f, 'اسم المستخدم قصير جداً.', 'error');
     if (d.password !== d.password2) return formMsg(f, 'كلمتا السر غير متطابقتين.', 'error');
-    if (!d.hint.trim()) return formMsg(f, 'التلميح مطلوب.', 'error');
 
     formMsg(f, '⏳ جاري الإنشاء...', 'info');
 
-    // التحقق العالمي: الاسم يجب أن يكون غير موجود في أي تطبيق
+    // التحقق العالمي: الاسم يجب أن يكون غير موجود في أي تطبيق من المنظومة
     const existingOrigin = await DB.getAnyUserOrigin(user_id);
     if (existingOrigin) {
-      const suggestions = [
-        user_id + '123',
-        user_id + '_2026',
-        user_id + '_sarf'
-      ];
-      const suggestionsText = suggestions.join('، ');
-      return formMsg(f, `هذا الاسم محجوز. جرب: ${suggestionsText}`, 'error');
+      const suggestions = [user_id + '123', user_id + '_2026', user_id + '_sarf'];
+      return formMsg(f, `هذا الاسم محجوز. جرب: ${suggestions.join('، ')}`, 'error');
     }
 
-    // إنشاء المستخدم
-    const result = await DB.createUser(user_id, await hash(d.password), d.hint.trim());
+    // إنشاء المستخدم - يُكتب APP_ORIGIN تلقائياً في created_from
+    const result = await DB.createUser(user_id, await hash(d.password));
     if (!result.success) {
       if (result.error?.code === '23505' || result.error?.code === 'duplicate' || result.error?.message?.includes('duplicate')) {
-        return formMsg(f, 'اسم المستخدم موجود مسبقاً في هذا التطبيق.', 'error');
+        return formMsg(f, 'هذا الاسم محجوز.', 'error');
       }
       return formMsg(f, 'حدث خطأ أثناء الإنشاء: ' + (result.error?.message || 'غير معروف'), 'error');
     }
@@ -388,6 +401,7 @@ $('#register-form').addEventListener('submit', async (e) => {
   }
 });
 
+// ٤. تسجيل دخول عالمي: يقبل أي مستخدم في جدول users بغض النظر عن created_from
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
@@ -397,7 +411,6 @@ $('#login-form').addEventListener('submit', async (e) => {
 
     formMsg(f, '⏳ جاري تسجيل الدخول...', 'info');
 
-    // تسجيل الدخول عالمي: بدون فلتر created_from لتمكين الدخول لجميع التطبيقات بنفس الحساب
     const user = await DB.getUser(user_id);
     if (!user) return formMsg(f, 'اسم المستخدم غير مسجّل. سجّل حساباً أولاً.', 'error');
 
@@ -423,6 +436,7 @@ $('#login-form').addEventListener('submit', async (e) => {
   }
 });
 
+// إعادة تعيين كلمة السر (التحقق من وجود الحساب ثم إظهار نموذج التغيير)
 $('#hint-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
@@ -430,8 +444,7 @@ $('#hint-form').addEventListener('submit', async (e) => {
     const user_id = new FormData(f).get('username').trim().toLowerCase();
     const user = await DB.getUser(user_id);
     if (!user) return formMsg(f, 'اسم المستخدم غير مسجّل. سجّل حساباً أولاً.', 'error');
-    formMsg(f, `💡 التلميح: ${user.hint}`, 'info');
-    // إظهار قسم تغيير كلمة السر
+    formMsg(f, '✅ تم التحقق. يمكنك تغيير كلمة السر الآن.', 'success');
     const section = $('#change-pwd-section');
     section.style.display = 'block';
     section.dataset.user_id = user_id;
@@ -464,7 +477,7 @@ $('#do-change-pwd-btn').addEventListener('click', async () => {
   msgEl.textContent = '⏳ جاري التحقق...'; msgEl.className = 'form-msg info';
 
   const user = await DB.getUser(user_id);
-  if (!user) { msgEl.textContent = 'خطأ: لم يُعثر على الحساب في هذا التطبيق.'; msgEl.className = 'form-msg error'; return; }
+  if (!user) { msgEl.textContent = 'خطأ: لم يُعثر على الحساب.'; msgEl.className = 'form-msg error'; return; }
 
   const oldHash = await hash(oldPwd);
   const storedHash = user.pass_hash || user.password;
@@ -474,7 +487,6 @@ $('#do-change-pwd-btn').addEventListener('click', async () => {
   const ok = await DB.updatePassword(user_id, newHash);
   if (!ok) { msgEl.textContent = 'حدث خطأ أثناء التحديث.'; msgEl.className = 'form-msg error'; return; }
 
-  // تحديث كلمة السر المحفوظة إن كانت موجودة
   if (localStorage.getItem('dm_saved_user_id') === user_id) {
     localStorage.setItem('dm_saved_password', newPwd);
   }
@@ -547,13 +559,11 @@ async function renderTrash() {
     tbody.appendChild(tr);
   });
 
-  // ربط أحداث خانات الاختيار
   tbody.querySelectorAll('.trash-check').forEach(cb => {
     cb.addEventListener('change', updateTrashSelectedButtons);
   });
 }
 
-// ============ تحديث أزرار سلة المحذوفات ============
 function updateTrashSelectedButtons() {
   const checkedCount = $$('.trash-check:checked').length;
   const restoreBtn = $('#trash-restore-selected');
@@ -572,7 +582,6 @@ function updateTrashSelectedButtons() {
     purgeAllBtn.style.display = 'inline-block';
   }
 
-  // تحديث حالة اختيار الكل
   const allCheckboxes = $$('.trash-check');
   const selectAll = $('#trash-select-all');
   if (allCheckboxes.length > 0) {
@@ -631,14 +640,12 @@ $('#trash-purge').addEventListener('click', async () => {
   await updateTrashBadge();
 });
 
-// اختيار الكل في سلة المحذوفات
 $('#trash-select-all').addEventListener('change', (e) => {
   const isChecked = e.target.checked;
   $$('.trash-check').forEach(cb => cb.checked = isChecked);
   updateTrashSelectedButtons();
 });
 
-// استرجاع العناصر المحددة
 $('#trash-restore-selected').addEventListener('click', async () => {
   const selectedIds = [...$$('.trash-check:checked')].map(cb => cb.dataset.id);
   if (selectedIds.length === 0) return toast('لم تختر أي عنصر', 'error');
@@ -652,12 +659,9 @@ $('#trash-restore-selected').addEventListener('click', async () => {
   const ok = await DB.restoreManyExpenses(selectedIds, currentUser);
   if (!ok) return toast('خطأ في الاسترجاع', 'error');
 
-  if (currentBudget > 0 && restoredAmount > 0) {
-    removeFromSpent(restoredAmount);
-  }
+  if (currentBudget > 0 && restoredAmount > 0) removeFromSpent(restoredAmount);
 
   toast(`تم استرجاع ${selectedIds.length} عنصر`, 'success');
-
   $('#trash-select-all').checked = false;
   $('#trash-select-all').indeterminate = false;
   await loadExpenses();
@@ -665,7 +669,6 @@ $('#trash-restore-selected').addEventListener('click', async () => {
   await updateTrashBadge();
 });
 
-// حذف العناصر المحددة نهائياً
 $('#trash-purge-selected').addEventListener('click', async () => {
   const selectedIds = [...$$('.trash-check:checked')].map(cb => cb.dataset.id);
   if (selectedIds.length === 0) return toast('لم تختر أي عنصر', 'error');
@@ -674,7 +677,6 @@ $('#trash-purge-selected').addEventListener('click', async () => {
   const ok = await DB.purgeManyExpenses(selectedIds, currentUser);
   if (!ok) return toast('خطأ في الحذف', 'error');
   toast(`تم حذف ${selectedIds.length} عنصر نهائياً`, 'error');
-
   $('#trash-select-all').checked = false;
   $('#trash-select-all').indeterminate = false;
   await renderTrash();
@@ -687,7 +689,7 @@ async function enterApp() {
   $('#auth-screen').classList.add('hidden');
   $('#app-screen').classList.remove('hidden');
   $('#user-label').textContent = currentUser;
-  await DB.purgeOldTrash(currentUser); // تنظيف العناصر الأقدم من 30 يوم
+  await DB.purgeOldTrash(currentUser);
   loadBudget();
   await loadExpenses();
   $('#expense-form [name=date]').value = new Date().toISOString().slice(0, 10);
@@ -704,7 +706,6 @@ $('#logout-btn').addEventListener('click', () => {
   switchTab('login');
 });
 
-// التصنيف المخصص - إظهار/إخفاء حقل الإدخال
 $('#cat-select').addEventListener('change', (e) => {
   const custom = $('#custom-cat');
   if (e.target.value === '__custom__') {
@@ -718,7 +719,6 @@ $('#cat-select').addEventListener('change', (e) => {
   }
 });
 
-// إضافة/تحديث مصروف
 $('#expense-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
@@ -753,7 +753,6 @@ $('#expense-form').addEventListener('submit', async (e) => {
   await loadExpenses();
 });
 
-// البحث والتصفية
 $('#search').addEventListener('input', render);
 $('#filter-cat').addEventListener('change', render);
 
@@ -772,7 +771,6 @@ $('#clear-all').addEventListener('click', async () => {
   await loadExpenses();
 });
 
-// ============ اختيار وحذف العناصر المحددة ============
 function updateDeleteSelectedButton() {
   const checkedCount = $$('.row-check:checked').length;
   const btn = $('#delete-selected');
@@ -780,12 +778,11 @@ function updateDeleteSelectedButton() {
   if (checkedCount > 0) {
     btn.style.display = 'inline-block';
     btn.textContent = `🗑️ حذف (${checkedCount})`;
-    clearAllBtn.style.display = 'none'; // إخفاء حذف الكل عند وجود اختيارات
+    clearAllBtn.style.display = 'none';
   } else {
     btn.style.display = 'none';
-    clearAllBtn.style.display = 'inline-block'; // إظهار حذف الكل عند عدم وجود اختيارات
+    clearAllBtn.style.display = 'inline-block';
   }
-  // تحديث حالة اختيار الكل
   const allCheckboxes = $$('.row-check');
   const selectAll = $('#select-all');
   if (allCheckboxes.length > 0) {
@@ -817,18 +814,16 @@ $('#delete-selected').addEventListener('click', async () => {
   const ok = await DB.deleteManyExpenses(selectedIds, currentUser);
   if (!ok) return toast('خطأ في الحذف', 'error');
   toast(`تم حذف ${selectedIds.length} عنصر`, 'success');
-
   $('#select-all').checked = false;
   $('#select-all').indeterminate = false;
   await loadExpenses();
 });
 
-// التصدير
 $('#export-btn').addEventListener('click', () => {
   if (!expenses.length) return toast('لا توجد بيانات للتصدير');
   const rows = [['التاريخ','الوصف','التصنيف','المبلغ','ملاحظات']];
   expenses.forEach(x => rows.push([x.date, x.title, x.category, x.amount, x.note || '']));
-  const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const csv = '﻿' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -837,7 +832,6 @@ $('#export-btn').addEventListener('click', () => {
   toast('تم التصدير بنجاح', 'success');
 });
 
-// الوضع الليلي
 function applyTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   $('#theme-toggle').textContent = t === 'dark' ? '☀️' : '🌙';
@@ -858,7 +852,6 @@ function render() {
   const q = $('#search').value.trim().toLowerCase();
   const cat = $('#filter-cat').value;
 
-  // تحديث قائمة التصنيفات في الفلتر
   const cats = [...new Set(expenses.map(x => x.category))].sort();
   const sel = $('#filter-cat');
   const prev = sel.value;
@@ -871,7 +864,6 @@ function render() {
     return true;
   });
 
-  // عرض مجموع التصنيف المحدد
   const sumEl = $('#cat-sum');
   if (cat) {
     const sum = filtered.reduce((s, x) => s + x.amount, 0);
@@ -902,12 +894,10 @@ function render() {
     tbody.appendChild(tr);
   });
 
-  // ربط أحداث خانات الاختيار
   tbody.querySelectorAll('.row-check').forEach(cb => {
     cb.addEventListener('change', updateDeleteSelectedButton);
   });
 
-  // إحصائيات
   const now = new Date();
   const ym = now.toISOString().slice(0, 7);
   const monthSum = expenses.filter(x => x.date.startsWith(ym)).reduce((s,x)=>s+x.amount,0);
@@ -921,10 +911,8 @@ function render() {
   const sorted = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
   $('#stat-top').textContent = sorted[0] ? sorted[0][0] : '—';
 
-  // تحديث الميزانية
   updateBudgetDisplay();
 
-  // مخطط التصنيفات
   const chart = $('#cat-chart');
   if (!sorted.length) {
     chart.innerHTML = '<p class="empty">لا توجد بيانات بعد.</p>';
@@ -941,7 +929,6 @@ function render() {
     `).join('');
   }
 
-  // رسم ملخص الأشهر
   renderMonths();
 }
 
@@ -958,10 +945,9 @@ function renderMonths() {
 
   const now = new Date();
   const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth(); // 0-indexed
+  const currentMonth = now.getMonth();
   const currentYM = now.toISOString().slice(0, 7);
 
-  // تجميع المصاريف حسب الشهر (YYYY-MM)
   const byMonth = {};
   expenses.forEach(x => {
     const ym = x.date.slice(0, 7);
@@ -971,12 +957,10 @@ function renderMonths() {
     byMonth[ym].cats[x.category] = (byMonth[ym].cats[x.category] || 0) + x.amount;
   });
 
-  // جمع كل السنوات الموجودة + السنة الحالية
   const years = new Set([currentYear]);
   Object.keys(byMonth).forEach(ym => years.add(parseInt(ym.split('-')[0])));
   const sortedYears = [...years].sort((a, b) => b - a);
 
-  // تحديث زر العرض
   const toggleBtn = $('#months-toggle');
   if (sortedYears.length <= 1) {
     toggleBtn.style.display = 'none';
@@ -991,7 +975,6 @@ function renderMonths() {
   displayYears.forEach(year => {
     html += `<div class="year-section"><h4 class="year-title">📅 ${year}</h4><div class="months-row">`;
 
-    // عرض الأشهر من يناير (0) إلى الشهر الحالي (للسنة الحالية) أو 12 شهر (للسنوات السابقة)
     const maxMonth = (year === currentYear) ? currentMonth : 11;
 
     for (let m = 0; m <= maxMonth; m++) {
@@ -1002,14 +985,12 @@ function renderMonths() {
       const total = data ? data.total : 0;
       const count = data ? data.items.length : 0;
 
-      // أعلى تصنيف
       let topName = '—';
       if (data) {
         const topCat = Object.entries(data.cats).sort((a, b) => b[1] - a[1]);
         topName = topCat[0] ? topCat[0][0] : '—';
       }
 
-      // ميزانية الشهر
       const mBudgetKey = `dm_mbudget_${currentUser}_${ym}`;
       const mBudget = parseFloat(localStorage.getItem(mBudgetKey) || '0');
       const remaining = mBudget > 0 ? mBudget - total : null;
@@ -1046,14 +1027,12 @@ function renderMonths() {
 
   grid.innerHTML = html;
 
-  // التمرير للشهر الحالي
   const currentCard = grid.querySelector('.month-card.current');
   if (currentCard) {
     setTimeout(() => currentCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }), 200);
   }
 }
 
-// حفظ ميزانية الشهر عند التغيير
 $('#months-grid').addEventListener('change', (e) => {
   const inp = e.target.closest('.month-budget-input');
   if (!inp) return;
@@ -1074,7 +1053,6 @@ $('#months-toggle').addEventListener('click', () => {
   renderMonths();
 });
 
-// أحداث الجدول
 $('#expense-table').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
@@ -1119,18 +1097,8 @@ function escapeHtml(s) {
 // ============================================================
 // مشاركة التطبيق
 // ============================================================
-
-// ╔══════════════════════════════════════════════════════════╗
-// ║   ⬇️⬇️⬇️   رابط التطبيق  ⬇️⬇️⬇️                        ║
-// ╚══════════════════════════════════════════════════════════╝
 const SHARE_LINK = 'https://www.appcreator24.com/app4008813-n0rd4w';
-// ╔══════════════════════════════════════════════════════════╗
-// ║   ⬇️⬇️⬇️  رابط المتصفح - ضع الرابط هنا  ⬇️⬇️⬇️       ║
-// ╚══════════════════════════════════════════════════════════╝
 const BROWSER_LINK = 'https://expensese.netlify.app/';
-// ╔══════════════════════════════════════════════════════════╗
-// ║   ⬆️⬆️⬆️  الروابط أعلاه  ⬆️⬆️⬆️                        ║
-// ╚══════════════════════════════════════════════════════════╝
 
 $('#share-btn').addEventListener('click', async () => {
   if (!SHARE_LINK || SHARE_LINK === 'ضع_الرابط_هنا') {
@@ -1142,16 +1110,10 @@ $('#share-btn').addEventListener('click', async () => {
   if (BROWSER_LINK && BROWSER_LINK !== 'ضع_رابط_المتصفح_هنا') {
     shareText += '🌐 اضغط للانتقال إلى المتصفح:\n' + BROWSER_LINK;
   }
-  const shareData = {
-    title: 'نفقات – إدارة مصاريف المنزل',
-    text: shareText,
-    url: SHARE_LINK,
-  };
-  // محاولة استخدام Web Share API (يعمل على الجوال والمتصفحات الحديثة)
+  const shareData = { title: 'نفقات – إدارة مصاريف المنزل', text: shareText, url: SHARE_LINK };
   if (navigator.share) {
     try { await navigator.share(shareData); } catch (e) { /* المستخدم ألغى */ }
   } else {
-    // إذا لم يدعم المتصفح Web Share، نعرض خيارات المشاركة يدوياً
     const encoded = encodeURIComponent(SHARE_LINK);
     const textEncoded = encodeURIComponent(shareText);
     const modal = document.createElement('div');
@@ -1178,9 +1140,7 @@ $('#share-btn').addEventListener('click', async () => {
       navigator.clipboard.writeText(SHARE_LINK).then(() => {
         toast('تم نسخ الرابط ✅', 'success');
         modal.remove();
-      }).catch(() => {
-        prompt('انسخ الرابط:', SHARE_LINK);
-      });
+      }).catch(() => { prompt('انسخ الرابط:', SHARE_LINK); });
     });
   }
 });
@@ -1188,32 +1148,13 @@ $('#share-btn').addEventListener('click', async () => {
 // ============================================================
 // الميزانية
 // ============================================================
-function getBudgetKey() {
-  return `dm_budget_${currentUser}`;
-}
-function getSpentKey() {
-  return `dm_spent_${currentUser}`;
-}
-function getBudgetStartKey() {
-  return `dm_budget_start_${currentUser}`;
-}
-function getBudgetStart() {
-  return localStorage.getItem(getBudgetStartKey()) || '';
-}
-
-function getTotalSpent() {
-  return parseFloat(localStorage.getItem(getSpentKey()) || '0');
-}
-
-function addToSpent(amount) {
-  const current = getTotalSpent();
-  localStorage.setItem(getSpentKey(), current + amount);
-}
-
-function removeFromSpent(amount) {
-  const current = getTotalSpent();
-  localStorage.setItem(getSpentKey(), Math.max(0, current - amount));
-}
+function getBudgetKey() { return `dm_budget_${currentUser}`; }
+function getSpentKey() { return `dm_spent_${currentUser}`; }
+function getBudgetStartKey() { return `dm_budget_start_${currentUser}`; }
+function getBudgetStart() { return localStorage.getItem(getBudgetStartKey()) || ''; }
+function getTotalSpent() { return parseFloat(localStorage.getItem(getSpentKey()) || '0'); }
+function addToSpent(amount) { localStorage.setItem(getSpentKey(), getTotalSpent() + amount); }
+function removeFromSpent(amount) { localStorage.setItem(getSpentKey(), Math.max(0, getTotalSpent() - amount)); }
 
 function loadBudget() {
   const saved = localStorage.getItem(getBudgetKey());
@@ -1234,10 +1175,7 @@ function saveBudget(val) {
 
 function updateBudgetDisplay() {
   const statusEl = $('#budget-status');
-  if (!currentBudget || currentBudget <= 0) {
-    statusEl.style.display = 'none';
-    return;
-  }
+  if (!currentBudget || currentBudget <= 0) { statusEl.style.display = 'none'; return; }
   statusEl.style.display = 'flex';
   const budgetStart = getBudgetStart();
   const activeTotal = expenses
@@ -1252,7 +1190,6 @@ function updateBudgetDisplay() {
   const bar = $('#budget-progress-bar');
   bar.style.width = pct + '%';
 
-  // تلوين حسب النسبة
   const remainEl = $('#budget-remaining');
   if (remaining <= 0) {
     bar.className = 'over';
@@ -1339,7 +1276,6 @@ $('#inapp-pwd-form').addEventListener('submit', async (e) => {
   const ok = await DB.updatePassword(currentUser, newHash);
   if (!ok) { msgEl.textContent = 'حدث خطأ أثناء الحفظ، حاول مرة أخرى.'; msgEl.className = 'form-msg error'; return; }
 
-  // تحديث كلمة السر المحفوظة
   if (localStorage.getItem('dm_saved_user_id') === currentUser) {
     localStorage.setItem('dm_saved_password', d.new_password);
   }
@@ -1387,7 +1323,6 @@ $('#contact-form').addEventListener('submit', (e) => {
   btn.textContent = '⏳ جاري الإرسال...';
   msgEl.textContent = '';
 
-  // إرسال عبر iframe مخفي (يتجاوز مشاكل CORS ولا يحتاج تفعيل JSON)
   const iframeName = 'contact-frame-' + Date.now();
   const iframe = document.createElement('iframe');
   iframe.name = iframeName;
@@ -1410,27 +1345,20 @@ $('#contact-form').addEventListener('submit', (e) => {
   };
   Object.entries(fields).forEach(([k, v]) => {
     const inp = document.createElement('input');
-    inp.type = 'hidden';
-    inp.name = k;
-    inp.value = v;
+    inp.type = 'hidden'; inp.name = k; inp.value = v;
     form.appendChild(inp);
   });
 
   document.body.appendChild(form);
   form.submit();
 
-  // نعتبر الإرسال ناجحاً بعد فترة قصيرة (iframe لا يمكن قراءة محتواه بسبب CORS)
   setTimeout(() => {
     msgEl.textContent = 'تم إرسال ملاحظتك ✅ شكراً لك!';
     msgEl.className = 'form-msg success';
     $('#contact-msg').value = '';
     btn.disabled = false;
     btn.textContent = 'إرسال ✉️';
-    setTimeout(() => {
-      closeContactModal();
-      form.remove();
-      iframe.remove();
-    }, 3500);
+    setTimeout(() => { closeContactModal(); form.remove(); iframe.remove(); }, 3500);
   }, 1500);
 });
 
@@ -1439,7 +1367,6 @@ $('#contact-form').addEventListener('submit', (e) => {
 // ============================================================
 applyTheme(localStorage.getItem(LS_THEME) || 'dark');
 
-// ملء حقول تسجيل الدخول من البيانات المحفوظة
 (function fillSavedCredentials() {
   const savedUserId = localStorage.getItem('dm_saved_user_id');
   const savedPass = localStorage.getItem('dm_saved_password');
@@ -1450,20 +1377,19 @@ applyTheme(localStorage.getItem(LS_THEME) || 'dark');
 async function autoLogin() {
   const savedUser = localStorage.getItem('dm_session_user') || sessionStorage.getItem('dm_session_user');
   if (savedUser) {
-    // التحقق من وجود المستخدم (بحث عالمي بدون فلتر created_from)
+    // تسجيل دخول تلقائي عالمي بدون فلتر created_from
     const user = await DB.getUser(savedUser);
     if (user) {
       currentUser = savedUser;
       enterApp();
     } else {
-      // مسح الجلسة إذا لم يكن المستخدم موجوداً
       localStorage.removeItem('dm_session_user');
       sessionStorage.removeItem('dm_session_user');
       localStorage.removeItem('dm_remember');
     }
   }
 }
-// إذا Supabase جاهز مسبقاً، ادخل مباشرة
+
 if (supabaseReady) {
   autoLogin();
 }
