@@ -2,7 +2,7 @@
 // نفقات - منطق التطبيق
 // ============================================================
 
-// ١. هوية التطبيق (ثابت)
+// ١. هوية التطبيق (ثابت) — مرتبط بنظام Space الموحد
 const APP_ORIGIN = 'expenses';
 
 // ⚙️ إعدادات Supabase
@@ -175,7 +175,7 @@ const DB = {
   async restoreExpense(id, user_id) {
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('expenses').update({ deleted_at: null }).eq('id', id);
+        const { error } = await sb.from('expenses').update({ deleted_at: null }).eq('id', id).eq('user_id', user_id);
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
@@ -189,7 +189,7 @@ const DB = {
   async purgeExpense(id, user_id) {
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('expenses').delete().eq('id', id);
+        const { error } = await sb.from('expenses').delete().eq('id', id).eq('user_id', user_id);
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
@@ -221,6 +221,7 @@ const DB = {
     if (this.isConnected()) {
       try {
         item.id = uid();
+        item.created_from = APP_ORIGIN;
         const { error } = await sb.from('expenses').insert(item);
         if (error) console.error('خطأ في إضافة المصروف:', error);
         return !error;
@@ -228,6 +229,7 @@ const DB = {
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(item.user_id)) || '[]');
       item.id = uid();
+      item.created_from = APP_ORIGIN;
       arr.unshift(item);
       localStorage.setItem(LS_EXP(item.user_id), JSON.stringify(arr));
       return true;
@@ -237,7 +239,7 @@ const DB = {
   async updateExpense(id, item) {
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('expenses').update(item).eq('id', id);
+        const { error } = await sb.from('expenses').update(item).eq('id', id).eq('user_id', item.user_id);
         if (error) console.error('خطأ في تحديث المصروف:', error);
         return !error;
       } catch (e) { console.error(e); return false; }
@@ -253,7 +255,7 @@ const DB = {
     const now = new Date().toISOString();
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('expenses').update({ deleted_at: now }).eq('id', id);
+        const { error } = await sb.from('expenses').update({ deleted_at: now }).eq('id', id).eq('user_id', user_id);
         if (error) console.error('خطأ في حذف المصروف:', error);
         return !error;
       } catch (e) { console.error(e); return false; }
@@ -285,7 +287,7 @@ const DB = {
     const now = new Date().toISOString();
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('expenses').update({ deleted_at: now }).in('id', ids);
+        const { error } = await sb.from('expenses').update({ deleted_at: now }).in('id', ids).eq('user_id', user_id);
         if (error) console.error('خطأ في الحذف الجماعي:', error);
         return !error;
       } catch (e) { console.error(e); return false; }
@@ -300,7 +302,7 @@ const DB = {
   async restoreManyExpenses(ids, user_id) {
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('expenses').update({ deleted_at: null }).in('id', ids);
+        const { error } = await sb.from('expenses').update({ deleted_at: null }).in('id', ids).eq('user_id', user_id);
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
@@ -314,7 +316,7 @@ const DB = {
   async purgeManyExpenses(ids, user_id) {
     if (this.isConnected()) {
       try {
-        const { error } = await sb.from('expenses').delete().in('id', ids);
+        const { error } = await sb.from('expenses').delete().in('id', ids).eq('user_id', user_id);
         return !error;
       } catch (e) { console.error(e); return false; }
     } else {
