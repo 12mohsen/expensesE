@@ -344,6 +344,59 @@ const DB = {
       localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
       return true;
     }
+  },
+
+  // ===== الميزانية في السحابة =====
+  // جدول budgets: user_id (نص، مفتاح أساسي)، budget، spent، budget_start (نص)، monthly (jsonb)
+  async getBudgetData(user_id) {
+    const fallback = { budget: 0, spent: 0, budget_start: '', monthly: {} };
+    if (this.isConnected()) {
+      try {
+        const { data, error } = await sb.from('budgets').select('*').eq('user_id', user_id).limit(1);
+        if (error) { console.error('خطأ في تحميل الميزانية:', error); return fallback; }
+        if (data && data.length) {
+          const r = data[0];
+          return {
+            budget: parseFloat(r.budget) || 0,
+            spent: parseFloat(r.spent) || 0,
+            budget_start: r.budget_start || '',
+            monthly: r.monthly || {}
+          };
+        }
+        return fallback;
+      } catch (e) { console.error(e); return fallback; }
+    } else {
+      return {
+        budget: parseFloat(localStorage.getItem(`dm_budget_${user_id}`) || '0') || 0,
+        spent: parseFloat(localStorage.getItem(`dm_spent_${user_id}`) || '0') || 0,
+        budget_start: localStorage.getItem(`dm_budget_start_${user_id}`) || '',
+        monthly: JSON.parse(localStorage.getItem(`dm_monthly_${user_id}`) || '{}')
+      };
+    }
+  },
+
+  async saveBudgetData(user_id, state) {
+    const row = {
+      user_id,
+      budget: state.budget || 0,
+      spent: state.spent || 0,
+      budget_start: state.budget_start || '',
+      monthly: state.monthly || {},
+      created_from: APP_ORIGIN
+    };
+    if (this.isConnected()) {
+      try {
+        const { error } = await sb.from('budgets').upsert(row, { onConflict: 'user_id' });
+        if (error) console.error('خطأ في حفظ الميزانية:', error);
+        return !error;
+      } catch (e) { console.error(e); return false; }
+    } else {
+      localStorage.setItem(`dm_budget_${user_id}`, row.budget);
+      localStorage.setItem(`dm_spent_${user_id}`, row.spent);
+      localStorage.setItem(`dm_budget_start_${user_id}`, row.budget_start);
+      localStorage.setItem(`dm_monthly_${user_id}`, JSON.stringify(row.monthly));
+      return true;
+    }
   }
 };
 
@@ -508,6 +561,12 @@ let currentUser = null;
 let expenses = [];
 let editingId = null;
 let currentBudget = 0;
+// حالة الميزانية المحمّلة من السحابة
+let budgetState = { budget: 0, spent: 0, budget_start: '', monthly: {} };
+// حفظ الحالة في السحابة (إطلاق دون انتظار)
+function persistBudget() {
+  if (currentUser) DB.saveBudgetData(currentUser, budgetState);
+}
 
 async function loadExpenses() {
   expenses = await DB.getExpenses(currentUser);
@@ -692,7 +751,7 @@ async function enterApp() {
   $('#app-screen').classList.remove('hidden');
   $('#user-label').textContent = currentUser;
   await DB.purgeOldTrash(currentUser);
-  loadBudget();
+  await loadBudget();
   await loadExpenses();
   $('#expense-form [name=date]').value = new Date().toISOString().slice(0, 10);
 }
@@ -993,8 +1052,7 @@ function renderMonths() {
         topName = topCat[0] ? topCat[0][0] : '—';
       }
 
-      const mBudgetKey = `dm_mbudget_${currentUser}_${ym}`;
-      const mBudget = parseFloat(localStorage.getItem(mBudgetKey) || '0');
+      const mBudget = parseFloat(budgetState.monthly[ym] || 0) || 0;
       const remaining = mBudget > 0 ? mBudget - total : null;
       const pct = mBudget > 0 ? Math.min((total / mBudget) * 100, 100) : 0;
       const pctClass = remaining !== null && remaining <= 0 ? 'over' : pct >= 75 ? 'warn' : '';
@@ -1040,13 +1098,13 @@ $('#months-grid').addEventListener('change', (e) => {
   if (!inp) return;
   const ym = inp.dataset.ym;
   const val = parseFloat(inp.value) || 0;
-  const key = `dm_mbudget_${currentUser}_${ym}`;
   if (val > 0) {
-    localStorage.setItem(key, val);
+    budgetState.monthly[ym] = val;
     toast('تم حفظ ميزانية ' + MONTH_NAMES[parseInt(ym.split('-')[1]) - 1] + ': ' + fmtMoney(val), 'success');
   } else {
-    localStorage.removeItem(key);
+    delete budgetState.monthly[ym];
   }
+  persistBudget();
   renderMonths();
 });
 
@@ -1150,28 +1208,22 @@ $('#share-btn').addEventListener('click', async () => {
 // ============================================================
 // الميزانية
 // ============================================================
-function getBudgetKey() { return `dm_budget_${currentUser}`; }
-function getSpentKey() { return `dm_spent_${currentUser}`; }
-function getBudgetStartKey() { return `dm_budget_start_${currentUser}`; }
-function getBudgetStart() { return localStorage.getItem(getBudgetStartKey()) || ''; }
-function getTotalSpent() { return parseFloat(localStorage.getItem(getSpentKey()) || '0'); }
-function addToSpent(amount) { localStorage.setItem(getSpentKey(), getTotalSpent() + amount); }
-function removeFromSpent(amount) { localStorage.setItem(getSpentKey(), Math.max(0, getTotalSpent() - amount)); }
+function getBudgetStart() { return budgetState.budget_start || ''; }
+function getTotalSpent() { return budgetState.spent || 0; }
+function addToSpent(amount) { budgetState.spent = getTotalSpent() + amount; persistBudget(); }
+function removeFromSpent(amount) { budgetState.spent = Math.max(0, getTotalSpent() - amount); persistBudget(); }
 
-function loadBudget() {
-  const saved = localStorage.getItem(getBudgetKey());
-  currentBudget = saved ? parseFloat(saved) : 0;
+async function loadBudget() {
+  budgetState = await DB.getBudgetData(currentUser);
+  currentBudget = budgetState.budget || 0;
   $('#budget-input').value = currentBudget || '';
   updateBudgetDisplay();
 }
 
 function saveBudget(val) {
   currentBudget = val;
-  if (val > 0) {
-    localStorage.setItem(getBudgetKey(), val);
-  } else {
-    localStorage.removeItem(getBudgetKey());
-  }
+  budgetState.budget = val > 0 ? val : 0;
+  persistBudget();
   updateBudgetDisplay();
 }
 
@@ -1207,12 +1259,13 @@ function updateBudgetDisplay() {
 
 $('#budget-save').addEventListener('click', () => {
   const val = parseFloat($('#budget-input').value) || 0;
-  saveBudget(val);
   if (val > 0) {
-    localStorage.setItem(getBudgetStartKey(), new Date().toISOString().slice(0, 10));
-    localStorage.removeItem(getSpentKey());
+    budgetState.budget_start = new Date().toISOString().slice(0, 10);
+    budgetState.spent = 0;
+    saveBudget(val);
     toast('تم حفظ الميزانية: ' + fmtMoney(val), 'success');
   } else {
+    saveBudget(0);
     toast('لم يتم تحديد ميزانية');
   }
 });
@@ -1221,9 +1274,9 @@ $('#budget-clear').addEventListener('click', () => {
   if (!currentBudget || currentBudget <= 0) return;
   if (!confirm('هل أنت متأكد من مسح الميزانية؟')) return;
   $('#budget-input').value = '';
+  budgetState.spent = 0;
+  budgetState.budget_start = '';
   saveBudget(0);
-  localStorage.removeItem(getSpentKey());
-  localStorage.removeItem(getBudgetStartKey());
   toast('تم مسح الميزانية');
 });
 
