@@ -1280,6 +1280,23 @@ $('#budget-clear').addEventListener('click', () => {
   toast('تم مسح الميزانية');
 });
 
+// إيداع مبلغ: يزيد الميزانية (والمتبقي) بالمبلغ المُدخل
+$('#budget-deposit').addEventListener('click', () => {
+  const inp = $('#budget-deposit-input');
+  const amt = parseFloat(inp.value) || 0;
+  if (amt <= 0) return toast('أدخل مبلغ الإيداع أولاً', 'error');
+  budgetState.budget = (parseFloat(budgetState.budget) || 0) + amt;
+  if (!budgetState.budget_start) {
+    budgetState.budget_start = new Date().toISOString().slice(0, 10);
+  }
+  currentBudget = budgetState.budget;
+  $('#budget-input').value = currentBudget;
+  persistBudget();
+  updateBudgetDisplay();
+  inp.value = '';
+  toast('تم إيداع ' + fmtMoney(amt) + ' ✅ الميزانية الآن ' + fmtMoney(currentBudget), 'success');
+});
+
 // ============================================================
 // تغيير كلمة السر (داخل التطبيق)
 // ============================================================
