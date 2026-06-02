@@ -1,0 +1,16 @@
+-- جدول الميزانية في Supabase (نفّذ هذا في SQL Editor مرة واحدة)
+create table if not exists public.budgets (
+  user_id      text primary key,
+  budget       numeric  default 0,
+  spent        numeric  default 0,
+  budget_start text     default '',
+  monthly      jsonb    default '{}'::jsonb,
+  created_from text,
+  updated_at   timestamptz default now()
+);
+
+alter table public.budgets enable row level security;
+
+drop policy if exists "budgets_all" on public.budgets;
+create policy "budgets_all" on public.budgets
+  for all using (true) with check (true);
