@@ -77,78 +77,173 @@ async function hash(txt) {
   return 'djb2_' + (h >>> 0).toString(16) + '_' + txt.length;
 }
 
+// ============ حالة الجلسة المحمية (توكن) ============
+// لم يعد المتصفح يقرأ جدول users ولا يقارن كلمات السر محلياً.
+// كل شيء يمر عبر دوال security definer في القاعدة.
+const TOKEN_KEY = 'dm_session_token';
+let authToken = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || null;
+
+function setAuthToken(token, remember) {
+  authToken = token || null;
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  if (!token) return;
+  if (remember) localStorage.setItem(TOKEN_KEY, token);
+  else sessionStorage.setItem(TOKEN_KEY, token);
+}
+
+function clearAuthToken() { setAuthToken(null, false); }
+
+async function rpc(fn, args) {
+  try {
+    const { data, error } = await sb.rpc(fn, args || {});
+    if (error) { console.error('RPC ' + fn + ':', error); return { __error: error }; }
+    return data;
+  } catch (e) {
+    console.error('RPC ' + fn + ':', e);
+    return { __error: e };
+  }
+}
+
+const rpcFailed = (d) => (d === null || d === undefined || (d && d.__error));
+
 // ============ وظائف Supabase + LocalStorage ============
 const DB = {
   isConnected() {
     return sb !== null && !useLocalStorage;
   },
 
-  // ٤. تسجيل الدخول العالمي: بحث بدون فلتر created_from
+  // ===================== المصادقة =====================
+
+  // التحقق من وجود الاسم فقط — لا يُرجع أي هاش ولا تلميح للمتصفح
   async getUser(userId) {
     if (this.isConnected()) {
-      try {
-        const { data } = await sb.from('users').select('*').eq('user_id', userId).limit(1);
-        return (data && data.length) ? data[0] : null;
-      } catch (e) { return null; }
+      const d = await rpc('app_get_hint', { p_user: userId });
+      if (rpcFailed(d)) return null;
+      return d.exists ? { user_id: userId } : null;
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
       return users[userId] || null;
     }
   },
 
-  // ٣. التحقق العالمي من وجود الاسم في أي تطبيق
+  // التحقق العالمي من وجود الاسم في أي تطبيق من المنظومة
   async getAnyUserOrigin(userId) {
     if (this.isConnected()) {
-      try {
-        const { data } = await sb.from('users').select('created_from').eq('user_id', userId).limit(1);
-        return (data && data.length) ? data[0].created_from : null;
-      } catch (e) { return null; }
+      const u = await this.getUser(userId);
+      return u ? 'shared' : null;
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
       return users[userId] ? (users[userId].created_from || 'local') : null;
     }
   },
 
-  // ٣. إنشاء مستخدم جديد - يكتب APP_ORIGIN في created_from تلقائياً
-  // ملاحظة: لا يوجد عمود hint في جدول users (الأعمدة: user_id, pass_hash, created_from)
-  async createUser(userId, passHash) {
+  // إنشاء حساب — القاعدة هي من تُجزّئ كلمة السر (bcrypt) وتُرجع توكن جلسة
+  async signup(userId, password) {
     if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('users').insert({
-          user_id: userId,
-          pass_hash: passHash,
-          created_from: APP_ORIGIN
-        });
-        if (error) {
-          console.error('خطأ في إنشاء المستخدم:', error);
-          return { success: false, error: error || {} };
-        }
-        return { success: true };
-      } catch (e) {
-        console.error(e);
-        return { success: false, error: e || {} };
-      }
+      const d = await rpc('app_signup', {
+        p_user: userId, p_pass: password, p_hint: '', p_origin: APP_ORIGIN
+      });
+      if (rpcFailed(d)) return { success: false, error: (d && d.__error) || {} };
+      if (d.taken) return { success: false, error: { code: 'duplicate' } };
+      if (!d.ok) return { success: false, error: { code: d.error || 'unknown', message: d.error || '' } };
+      return { success: true, token: d.token };
     } else {
       const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
       if (users[userId]) return { success: false, error: { code: 'duplicate' } };
-      users[userId] = { password: passHash, created_from: APP_ORIGIN };
+      users[userId] = { password: await hash(password), created_from: APP_ORIGIN };
       localStorage.setItem(LS_USERS, JSON.stringify(users));
-      return { success: true };
+      return { success: true, token: null };
     }
   },
 
-  // ٥. فصل البيانات: جلب نفقات المستخدم الحالي فقط بناءً على user_id
+  // تسجيل الدخول — المقارنة تتم داخل القاعدة، والهاش القديم يُرقّى تلقائياً
+  async login(userId, password) {
+    if (this.isConnected()) {
+      const d = await rpc('app_login', {
+        p_user: userId, p_pass: password, p_origin: APP_ORIGIN
+      });
+      if (rpcFailed(d)) return { ok: false, error: 'network' };
+      if (d.ok) return { ok: true, token: d.token };
+      if (d.locked) return { ok: false, error: 'locked' };
+      if (d.exists === false) return { ok: false, error: 'no_user' };
+      return { ok: false, error: 'bad_password' };
+    } else {
+      const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
+      const u = users[userId];
+      if (!u) return { ok: false, error: 'no_user' };
+      const h = await hash(password);
+      if ((u.password || u.pass_hash) !== h) return { ok: false, error: 'bad_password' };
+      return { ok: true, token: null };
+    }
+  },
+
+  // من أنا؟ — استعادة الجلسة من التوكن
+  async resume() {
+    if (this.isConnected()) {
+      if (!authToken) return null;
+      const d = await rpc('app_session_user', { p_token: authToken });
+      if (rpcFailed(d)) return null;
+      return d || null;
+    } else {
+      return localStorage.getItem('dm_session_user') || sessionStorage.getItem('dm_session_user');
+    }
+  },
+
+  async logout() {
+    if (this.isConnected() && authToken) await rpc('app_logout', { p_token: authToken });
+    clearAuthToken();
+  },
+
+  // تغيير كلمة السر من داخل التطبيق (التوكن موجود)
+  async changePassword(oldPwd, newPwd) {
+    if (this.isConnected()) {
+      const d = await rpc('app_change_password', {
+        p_token: authToken, p_old: oldPwd, p_new: newPwd
+      });
+      if (rpcFailed(d)) return { ok: false, error: 'network' };
+      return { ok: !!d.ok, error: d.error || null };
+    } else {
+      const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
+      const u = users[currentUser];
+      if (!u) return { ok: false, error: 'user_not_found' };
+      if ((u.password || u.pass_hash) !== await hash(oldPwd)) return { ok: false, error: 'wrong_old_password' };
+      users[currentUser].password = await hash(newPwd);
+      localStorage.setItem(LS_USERS, JSON.stringify(users));
+      return { ok: true, error: null };
+    }
+  },
+
+  // تغيير كلمة السر من شاشة الدخول: دخول بكلمة السر القديمة ثم تغييرها
+  async changePasswordWithLogin(userId, oldPwd, newPwd) {
+    if (this.isConnected()) {
+      const l = await this.login(userId, oldPwd);
+      if (!l.ok) return { ok: false, error: l.error === 'bad_password' ? 'wrong_old_password' : l.error };
+      const d = await rpc('app_change_password', {
+        p_token: l.token, p_old: oldPwd, p_new: newPwd
+      });
+      if (rpcFailed(d)) return { ok: false, error: 'network' };
+      return { ok: !!d.ok, error: d.error || null };
+    } else {
+      const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
+      const u = users[userId];
+      if (!u) return { ok: false, error: 'user_not_found' };
+      if ((u.password || u.pass_hash) !== await hash(oldPwd)) return { ok: false, error: 'wrong_old_password' };
+      users[userId].password = await hash(newPwd);
+      localStorage.setItem(LS_USERS, JSON.stringify(users));
+      return { ok: true, error: null };
+    }
+  },
+
+  // ===================== المصاريف =====================
+  // لم يعد user_id يُرسل من المتصفح: القاعدة تستخرجه من التوكن.
+  // الوسائط باقية كما هي حتى لا يتغيّر بقية الكود.
+
   async getExpenses(user_id) {
     if (this.isConnected()) {
-      try {
-        const { data, error } = await sb.from('expenses')
-          .select('*')
-          .eq('user_id', user_id)
-          .is('deleted_at', null)
-          .order('date', { ascending: false });
-        if (error) { console.error(error); toast('خطأ في تحميل البيانات', 'error'); return []; }
-        return data || [];
-      } catch (e) { console.error(e); return []; }
+      const d = await rpc('ex_fetch', { p_token: authToken });
+      if (rpcFailed(d)) { toast('خطأ في تحميل البيانات', 'error'); return []; }
+      return Array.isArray(d) ? d : [];
     } else {
       const arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       return arr.filter(x => !x.deleted_at);
@@ -157,15 +252,9 @@ const DB = {
 
   async getTrash(user_id) {
     if (this.isConnected()) {
-      try {
-        const { data, error } = await sb.from('expenses')
-          .select('*')
-          .eq('user_id', user_id)
-          .not('deleted_at', 'is', null)
-          .order('deleted_at', { ascending: false });
-        if (error) { console.error(error); return []; }
-        return data || [];
-      } catch (e) { console.error(e); return []; }
+      const d = await rpc('ex_fetch_deleted', { p_token: authToken });
+      if (rpcFailed(d)) return [];
+      return Array.isArray(d) ? d : [];
     } else {
       const arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       return arr.filter(x => x.deleted_at);
@@ -174,10 +263,8 @@ const DB = {
 
   async restoreExpense(id, user_id) {
     if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('expenses').update({ deleted_at: null }).eq('id', id).eq('user_id', user_id);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+      const d = await rpc('ex_restore', { p_token: authToken, p_id: id });
+      return !rpcFailed(d) && !!d.ok;
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.map(x => x.id === id ? { ...x, deleted_at: null } : x);
@@ -188,10 +275,8 @@ const DB = {
 
   async purgeExpense(id, user_id) {
     if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('expenses').delete().eq('id', id).eq('user_id', user_id);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+      const d = await rpc('ex_purge', { p_token: authToken, p_id: id });
+      return !rpcFailed(d) && !!d.ok;
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.filter(x => x.id !== id);
@@ -203,12 +288,7 @@ const DB = {
   async purgeOldTrash(user_id) {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     if (this.isConnected()) {
-      try {
-        await sb.from('expenses').delete()
-          .eq('user_id', user_id)
-          .not('deleted_at', 'is', null)
-          .lt('deleted_at', cutoff);
-      } catch (e) { console.error(e); }
+      await rpc('ex_purge_old', { p_token: authToken });
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.filter(x => !x.deleted_at || x.deleted_at >= cutoff);
@@ -216,16 +296,13 @@ const DB = {
     }
   },
 
-  // ٧. عند إضافة نفقة: id من نوع uuid يضمن سهولة الحذف من Supabase
   async addExpense(item) {
     if (this.isConnected()) {
-      try {
-        item.id = uid();
-        item.created_from = APP_ORIGIN;
-        const { error } = await sb.from('expenses').insert(item);
-        if (error) console.error('خطأ في إضافة المصروف:', error);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+      item.id = uid();
+      item.created_from = APP_ORIGIN;
+      const { user_id, ...payload } = item;   // القاعدة تتولى user_id
+      const d = await rpc('ex_save', { p_token: authToken, p_item: payload });
+      return !rpcFailed(d) && !!d.ok;
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(item.user_id)) || '[]');
       item.id = uid();
@@ -238,11 +315,9 @@ const DB = {
 
   async updateExpense(id, item) {
     if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('expenses').update(item).eq('id', id).eq('user_id', item.user_id);
-        if (error) console.error('خطأ في تحديث المصروف:', error);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+      const { user_id, ...payload } = item;
+      const d = await rpc('ex_update', { p_token: authToken, p_id: id, p_item: payload });
+      return !rpcFailed(d) && !!d.ok;
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(item.user_id)) || '[]');
       arr = arr.map(x => x.id === id ? { ...item, id } : x);
@@ -254,11 +329,8 @@ const DB = {
   async deleteExpense(id, user_id) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('expenses').update({ deleted_at: now }).eq('id', id).eq('user_id', user_id);
-        if (error) console.error('خطأ في حذف المصروف:', error);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+      const d = await rpc('ex_soft_delete', { p_token: authToken, p_id: id });
+      return !rpcFailed(d) && !!d.ok;
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.map(x => x.id === id ? { ...x, deleted_at: now } : x);
@@ -267,30 +339,11 @@ const DB = {
     }
   },
 
-  async updatePassword(userId, newPassHash) {
-    if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('users').update({ pass_hash: newPassHash }).eq('user_id', userId);
-        if (error) { console.error('خطأ في تحديث كلمة السر:', error); return false; }
-        return true;
-      } catch (e) { console.error(e); return false; }
-    } else {
-      const users = JSON.parse(localStorage.getItem(LS_USERS) || '{}');
-      if (!users[userId]) return false;
-      users[userId].password = newPassHash;
-      localStorage.setItem(LS_USERS, JSON.stringify(users));
-      return true;
-    }
-  },
-
   async deleteManyExpenses(ids, user_id) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('expenses').update({ deleted_at: now }).in('id', ids).eq('user_id', user_id);
-        if (error) console.error('خطأ في الحذف الجماعي:', error);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+      const d = await rpc('ex_soft_delete_many', { p_token: authToken, p_ids: ids });
+      return !rpcFailed(d) && !!d.ok;
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.map(x => ids.includes(x.id) ? { ...x, deleted_at: now } : x);
@@ -301,10 +354,8 @@ const DB = {
 
   async restoreManyExpenses(ids, user_id) {
     if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('expenses').update({ deleted_at: null }).in('id', ids).eq('user_id', user_id);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+      const d = await rpc('ex_restore_many', { p_token: authToken, p_ids: ids });
+      return !rpcFailed(d) && !!d.ok;
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.map(x => ids.includes(x.id) ? { ...x, deleted_at: null } : x);
@@ -315,10 +366,8 @@ const DB = {
 
   async purgeManyExpenses(ids, user_id) {
     if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('expenses').delete().in('id', ids).eq('user_id', user_id);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+      const d = await rpc('ex_purge_many', { p_token: authToken, p_ids: ids });
+      return !rpcFailed(d) && !!d.ok;
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.filter(x => !ids.includes(x.id));
@@ -330,14 +379,8 @@ const DB = {
   async deleteAllExpenses(user_id) {
     const now = new Date().toISOString();
     if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('expenses')
-          .update({ deleted_at: now })
-          .eq('user_id', user_id)
-          .is('deleted_at', null);
-        if (error) console.error('خطأ في حذف جميع المصاريف:', error);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+      const d = await rpc('ex_delete_all', { p_token: authToken });
+      return !rpcFailed(d) && !!d.ok;
     } else {
       let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
       arr = arr.map(x => x.deleted_at ? x : { ...x, deleted_at: now });
@@ -347,24 +390,17 @@ const DB = {
   },
 
   // ===== الميزانية في السحابة =====
-  // جدول budgets: user_id (نص، مفتاح أساسي)، budget، spent، budget_start (نص)، monthly (jsonb)
   async getBudgetData(user_id) {
     const fallback = { budget: 0, spent: 0, budget_start: '', monthly: {} };
     if (this.isConnected()) {
-      try {
-        const { data, error } = await sb.from('budgets').select('*').eq('user_id', user_id).limit(1);
-        if (error) { console.error('خطأ في تحميل الميزانية:', error); return fallback; }
-        if (data && data.length) {
-          const r = data[0];
-          return {
-            budget: parseFloat(r.budget) || 0,
-            spent: parseFloat(r.spent) || 0,
-            budget_start: r.budget_start || '',
-            monthly: r.monthly || {}
-          };
-        }
-        return fallback;
-      } catch (e) { console.error(e); return fallback; }
+      const r = await rpc('bg_get', { p_token: authToken });
+      if (rpcFailed(r)) return fallback;
+      return {
+        budget: parseFloat(r.budget) || 0,
+        spent: parseFloat(r.spent) || 0,
+        budget_start: r.budget_start || '',
+        monthly: r.monthly || {}
+      };
     } else {
       return {
         budget: parseFloat(localStorage.getItem(`dm_budget_${user_id}`) || '0') || 0,
@@ -377,19 +413,14 @@ const DB = {
 
   async saveBudgetData(user_id, state) {
     const row = {
-      user_id,
       budget: state.budget || 0,
       spent: state.spent || 0,
       budget_start: state.budget_start || '',
-      monthly: state.monthly || {},
-      created_from: APP_ORIGIN
+      monthly: state.monthly || {}
     };
     if (this.isConnected()) {
-      try {
-        const { error } = await sb.from('budgets').upsert(row, { onConflict: 'user_id' });
-        if (error) console.error('خطأ في حفظ الميزانية:', error);
-        return !error;
-      } catch (e) { console.error(e); return false; }
+      const d = await rpc('bg_save', { p_token: authToken, p_state: row });
+      return !rpcFailed(d) && !!d.ok;
     } else {
       localStorage.setItem(`dm_budget_${user_id}`, row.budget);
       localStorage.setItem(`dm_spent_${user_id}`, row.spent);
@@ -427,26 +458,28 @@ $('#register-form').addEventListener('submit', async (e) => {
     const user_id = d.username.trim().toLowerCase();
     if (user_id.length < 3) return formMsg(f, 'اسم المستخدم قصير جداً.', 'error');
     if (d.password !== d.password2) return formMsg(f, 'كلمتا السر غير متطابقتين.', 'error');
+    if (!d.password || d.password.length < 4) return formMsg(f, 'كلمة السر قصيرة جداً (٤ أحرف على الأقل).', 'error');
 
     formMsg(f, '⏳ جاري الإنشاء...', 'info');
 
-    // التحقق العالمي: الاسم يجب أن يكون غير موجود في أي تطبيق من المنظومة
-    const existingOrigin = await DB.getAnyUserOrigin(user_id);
-    if (existingOrigin) {
+    // إنشاء المستخدم — القاعدة تتحقق من تكرار الاسم وتُجزّئ كلمة السر بـ bcrypt
+    const result = await DB.signup(user_id, d.password);
+    if (!result.success && result.error?.code === 'duplicate') {
       const suggestions = [user_id + '123', user_id + '_2026', user_id + '_sarf'];
       return formMsg(f, `هذا الاسم محجوز. جرب: ${suggestions.join('، ')}`, 'error');
     }
-
-    // إنشاء المستخدم - يُكتب APP_ORIGIN تلقائياً في created_from
-    const result = await DB.createUser(user_id, await hash(d.password));
     if (!result.success) {
       if (result.error?.code === '23505' || result.error?.code === 'duplicate' || result.error?.message?.includes('duplicate')) {
         return formMsg(f, 'هذا الاسم محجوز.', 'error');
+      }
+      if (result.error?.code === 'invalid_input') {
+        return formMsg(f, 'اسم المستخدم أو كلمة السر قصيرة جداً.', 'error');
       }
       return formMsg(f, 'حدث خطأ أثناء الإنشاء: ' + (result.error?.message || 'غير معروف'), 'error');
     }
 
     formMsg(f, 'تم إنشاء الحساب! جاري تسجيل الدخول...', 'success');
+    setAuthToken(result.token, true);
     localStorage.setItem('dm_session_user', user_id);
     localStorage.setItem('dm_remember', '1');
     setTimeout(enterApp, 700);
@@ -466,12 +499,14 @@ $('#login-form').addEventListener('submit', async (e) => {
 
     formMsg(f, '⏳ جاري تسجيل الدخول...', 'info');
 
-    const user = await DB.getUser(user_id);
-    if (!user) return formMsg(f, 'اسم المستخدم غير مسجّل. سجّل حساباً أولاً.', 'error');
-
-    const pwdHash = await hash(d.password);
-    const storedHash = user.pass_hash || user.password;
-    if (storedHash !== pwdHash) return formMsg(f, 'كلمة السر غير صحيحة.', 'error');
+    const res = await DB.login(user_id, d.password);
+    if (!res.ok) {
+      if (res.error === 'no_user') return formMsg(f, 'اسم المستخدم غير مسجّل. سجّل حساباً أولاً.', 'error');
+      if (res.error === 'locked') return formMsg(f, 'تم قفل الحساب مؤقتاً بعد محاولات فاشلة متكررة. حاول بعد ١٥ دقيقة.', 'error');
+      if (res.error === 'network') return formMsg(f, 'تعذّر الاتصال بالخادم. حاول مرة أخرى.', 'error');
+      return formMsg(f, 'كلمة السر غير صحيحة.', 'error');
+    }
+    setAuthToken(res.token, !!d.remember);
 
     if (d.remember) {
       localStorage.setItem('dm_session_user', user_id);
@@ -531,16 +566,20 @@ $('#do-change-pwd-btn').addEventListener('click', async () => {
 
   msgEl.textContent = '⏳ جاري التحقق...'; msgEl.className = 'form-msg info';
 
-  const user = await DB.getUser(user_id);
-  if (!user) { msgEl.textContent = 'خطأ: لم يُعثر على الحساب.'; msgEl.className = 'form-msg error'; return; }
+  const PWD_ERRORS = {
+    user_not_found: 'خطأ: لم يُعثر على الحساب.',
+    wrong_old_password: 'كلمة السر الحالية غير صحيحة.',
+    locked: 'تم قفل الحساب مؤقتاً بعد محاولات فاشلة متكررة. حاول بعد ١٥ دقيقة.',
+    invalid_input: 'كلمة السر الجديدة قصيرة جداً.',
+    network: 'تعذّر الاتصال بالخادم. حاول مرة أخرى.'
+  };
 
-  const oldHash = await hash(oldPwd);
-  const storedHash = user.pass_hash || user.password;
-  if (storedHash !== oldHash) { msgEl.textContent = 'كلمة السر الحالية غير صحيحة.'; msgEl.className = 'form-msg error'; return; }
-
-  const newHash = await hash(newPwd);
-  const ok = await DB.updatePassword(user_id, newHash);
-  if (!ok) { msgEl.textContent = 'حدث خطأ أثناء التحديث.'; msgEl.className = 'form-msg error'; return; }
+  const res = await DB.changePasswordWithLogin(user_id, oldPwd, newPwd);
+  if (!res.ok) {
+    msgEl.textContent = PWD_ERRORS[res.error] || 'حدث خطأ أثناء التحديث.';
+    msgEl.className = 'form-msg error';
+    return;
+  }
 
   if (localStorage.getItem('dm_saved_user_id') === user_id) {
     localStorage.setItem('dm_saved_password', newPwd);
@@ -756,7 +795,8 @@ async function enterApp() {
   $('#expense-form [name=date]').value = new Date().toISOString().slice(0, 10);
 }
 
-$('#logout-btn').addEventListener('click', () => {
+$('#logout-btn').addEventListener('click', async () => {
+  await DB.logout();
   localStorage.removeItem('dm_session_user');
   sessionStorage.removeItem('dm_session_user');
   localStorage.removeItem('dm_remember');
@@ -1337,16 +1377,19 @@ $('#inapp-pwd-form').addEventListener('submit', async (e) => {
 
   msgEl.textContent = '⏳ جاري التحقق...'; msgEl.className = 'form-msg info';
 
-  const user = await DB.getUser(currentUser);
-  if (!user) { msgEl.textContent = 'خطأ: لم يُعثر على الحساب.'; msgEl.className = 'form-msg error'; return; }
-
-  const oldHash = await hash(d.old_password);
-  const storedHash = user.pass_hash || user.password;
-  if (storedHash !== oldHash) { msgEl.textContent = 'كلمة السر الحالية غير صحيحة.'; msgEl.className = 'form-msg error'; return; }
-
-  const newHash = await hash(d.new_password);
-  const ok = await DB.updatePassword(currentUser, newHash);
-  if (!ok) { msgEl.textContent = 'حدث خطأ أثناء الحفظ، حاول مرة أخرى.'; msgEl.className = 'form-msg error'; return; }
+  const res = await DB.changePassword(d.old_password, d.new_password);
+  if (!res.ok) {
+    const map = {
+      unauthorized: 'انتهت الجلسة، سجّل الدخول من جديد.',
+      user_not_found: 'خطأ: لم يُعثر على الحساب.',
+      wrong_old_password: 'كلمة السر الحالية غير صحيحة.',
+      invalid_input: 'كلمة السر الجديدة قصيرة جداً.',
+      network: 'تعذّر الاتصال بالخادم. حاول مرة أخرى.'
+    };
+    msgEl.textContent = map[res.error] || 'حدث خطأ أثناء الحفظ، حاول مرة أخرى.';
+    msgEl.className = 'form-msg error';
+    return;
+  }
 
   if (localStorage.getItem('dm_saved_user_id') === currentUser) {
     localStorage.setItem('dm_saved_password', d.new_password);
@@ -1447,18 +1490,18 @@ applyTheme(localStorage.getItem(LS_THEME) || 'dark');
 })();
 
 async function autoLogin() {
-  const savedUser = localStorage.getItem('dm_session_user') || sessionStorage.getItem('dm_session_user');
-  if (savedUser) {
-    // تسجيل دخول تلقائي عالمي بدون فلتر created_from
-    const user = await DB.getUser(savedUser);
-    if (user) {
-      currentUser = savedUser;
-      enterApp();
-    } else {
-      localStorage.removeItem('dm_session_user');
-      sessionStorage.removeItem('dm_session_user');
-      localStorage.removeItem('dm_remember');
-    }
+  // الجلسة تُستعاد من التوكن، والقاعدة هي من تُحدّد صاحبه
+  const resumed = await DB.resume();
+  if (resumed) {
+    currentUser = resumed;
+    if (localStorage.getItem(TOKEN_KEY)) localStorage.setItem('dm_session_user', resumed);
+    else sessionStorage.setItem('dm_session_user', resumed);
+    enterApp();
+  } else {
+    clearAuthToken();
+    localStorage.removeItem('dm_session_user');
+    sessionStorage.removeItem('dm_session_user');
+    localStorage.removeItem('dm_remember');
   }
 }
 
