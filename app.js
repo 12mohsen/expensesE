@@ -97,7 +97,12 @@ function clearAuthToken() { setAuthToken(null, false); }
 async function rpc(fn, args) {
   try {
     const { data, error } = await sb.rpc(fn, args || {});
-    if (error) { console.error('RPC ' + fn + ':', error); return { __error: error }; }
+    if (error) {
+      console.error('RPC ' + fn + ':', error);
+      // إظهار سبب الخطأ على الشاشة بدل رسالة عامة
+      if (typeof toast === 'function' && error.message) toast(error.message, 'error');
+      return { __error: error };
+    }
     return data;
   } catch (e) {
     console.error('RPC ' + fn + ':', e);
@@ -389,6 +394,34 @@ const DB = {
     }
   },
 
+  // استرجاع المبلغ للميزانية: حذف + وسم بالاسترجاع حتى لا يُحتسب مصروفاً
+  async refundExpense(id, user_id) {
+    if (this.isConnected()) {
+      const d = await rpc('ex_refund', { p_token: authToken, p_id: id });
+      return !rpcFailed(d) && !!d.ok;
+    } else {
+      const now = new Date().toISOString();
+      let arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
+      arr = arr.map(x => x.id === id ? { ...x, deleted_at: now, refunded_at: now } : x);
+      localStorage.setItem(LS_EXP(user_id), JSON.stringify(arr));
+      return true;
+    }
+  },
+
+  // مجموع المصروف من المحذوفات غير المسترجَعة — يُحتسب من البيانات لا من عدّاد
+  async getSpentTotal(user_id, budgetStart) {
+    if (this.isConnected()) {
+      const d = await rpc('ex_spent_total', { p_token: authToken, p_start: budgetStart || '' });
+      if (rpcFailed(d)) return 0;
+      return parseFloat(d.spent) || 0;
+    } else {
+      const arr = JSON.parse(localStorage.getItem(LS_EXP(user_id)) || '[]');
+      return arr
+        .filter(x => x.deleted_at && !x.refunded_at && (!budgetStart || x.date >= budgetStart))
+        .reduce((t, x) => t + (parseFloat(x.amount) || 0), 0);
+    }
+  },
+
   // ===== الميزانية في السحابة =====
   async getBudgetData(user_id) {
     const fallback = { budget: 0, spent: 0, budget_start: '', monthly: {} };
@@ -609,6 +642,7 @@ function persistBudget() {
 
 async function loadExpenses() {
   expenses = await DB.getExpenses(currentUser);
+  budgetState.spent = await DB.getSpentTotal(currentUser, getBudgetStart());
   render();
   updateTrashBadge();
 }
@@ -710,11 +744,8 @@ $('#trash-table').addEventListener('click', async (e) => {
   if (!btn) return;
   const id = btn.dataset.id;
   if (btn.dataset.act === 'restore') {
-    const trashItems = await DB.getTrash(currentUser);
-    const restoredItem = trashItems.find(x => x.id === id);
     const ok = await DB.restoreExpense(id, currentUser);
     if (!ok) return toast('خطأ في الاسترجاع', 'error');
-    if (restoredItem && currentBudget > 0) removeFromSpent(restoredItem.amount);
     toast('تم الاسترجاع ♻️', 'success');
     await loadExpenses();
     await renderTrash();
@@ -751,15 +782,8 @@ $('#trash-restore-selected').addEventListener('click', async () => {
   if (selectedIds.length === 0) return toast('لم تختر أي عنصر', 'error');
   if (!confirm(`هل أنت متأكد من استرجاع ${selectedIds.length} عنصر/عناصر؟`)) return;
 
-  const trashItems = await DB.getTrash(currentUser);
-  const restoredAmount = trashItems
-    .filter(x => selectedIds.includes(x.id))
-    .reduce((s, x) => s + x.amount, 0);
-
   const ok = await DB.restoreManyExpenses(selectedIds, currentUser);
   if (!ok) return toast('خطأ في الاسترجاع', 'error');
-
-  if (currentBudget > 0 && restoredAmount > 0) removeFromSpent(restoredAmount);
 
   toast(`تم استرجاع ${selectedIds.length} عنصر`, 'success');
   $('#trash-select-all').checked = false;
@@ -860,10 +884,6 @@ $('#filter-cat').addEventListener('change', render);
 $('#clear-all').addEventListener('click', async () => {
   if (!expenses.length) return toast('لا يوجد شيء لحذفه');
   if (!confirm('هل أنت متأكد من حذف جميع المصاريف؟')) return;
-  if (currentBudget > 0) {
-    const totalActive = expenses.reduce((s, x) => s + x.amount, 0);
-    addToSpent(totalActive);
-  }
   const ok = await DB.deleteAllExpenses(currentUser);
   if (!ok) return toast('خطأ في الحذف', 'error');
   toast('تم حذف الكل', 'error');
@@ -905,12 +925,6 @@ $('#delete-selected').addEventListener('click', async () => {
   const selectedIds = [...$$('.row-check:checked')].map(cb => cb.dataset.id);
   if (selectedIds.length === 0) return toast('لم تختر أي عنصر', 'error');
   if (!confirm(`هل أنت متأكد من حذف ${selectedIds.length} عنصر/عناصر؟`)) return;
-
-  if (currentBudget > 0) {
-    const selectedItems = expenses.filter(x => selectedIds.includes(x.id));
-    const totalToRemove = selectedItems.reduce((s, x) => s + x.amount, 0);
-    addToSpent(totalToRemove);
-  }
 
   const ok = await DB.deleteManyExpenses(selectedIds, currentUser);
   if (!ok) return toast('خطأ في الحذف', 'error');
@@ -1162,9 +1176,8 @@ $('#expense-table').addEventListener('click', async (e) => {
     if (!item) return;
     if (!currentBudget || currentBudget <= 0) return toast('لا توجد ميزانية لاسترجاع المبلغ إليها', 'error');
     if (!confirm('استرجاع ' + fmtMoney(item.amount) + ' للميزانية وحذف المصروف؟')) return;
-    const ok = await DB.deleteExpense(id, currentUser);
+    const ok = await DB.refundExpense(id, currentUser);
     if (!ok) return toast('خطأ في الاسترجاع', 'error');
-    removeFromSpent(item.amount);
     toast('تم استرجاع ' + fmtMoney(item.amount) + ' للميزانية 💰', 'success');
     await loadExpenses();
   } else if (btn.dataset.act === 'del') {
@@ -1172,7 +1185,6 @@ $('#expense-table').addEventListener('click', async (e) => {
     const item = expenses.find(x => x.id === id);
     const ok = await DB.deleteExpense(id, currentUser);
     if (!ok) return toast('خطأ في الحذف', 'error');
-    if (item && currentBudget > 0) addToSpent(item.amount);
     toast('تم الحذف', 'error');
     await loadExpenses();
   } else if (btn.dataset.act === 'edit') {
@@ -1250,8 +1262,7 @@ $('#share-btn').addEventListener('click', async () => {
 // ============================================================
 function getBudgetStart() { return budgetState.budget_start || ''; }
 function getTotalSpent() { return budgetState.spent || 0; }
-function addToSpent(amount) { budgetState.spent = getTotalSpent() + amount; persistBudget(); }
-function removeFromSpent(amount) { budgetState.spent = Math.max(0, getTotalSpent() - amount); persistBudget(); }
+// لا عدّاد بعد الآن: المصروف من المحذوفات يُقرأ من القاعدة في كل تحميل
 
 async function loadBudget() {
   budgetState = await DB.getBudgetData(currentUser);
@@ -1297,12 +1308,13 @@ function updateBudgetDisplay() {
   }
 }
 
-$('#budget-save').addEventListener('click', () => {
+$('#budget-save').addEventListener('click', async () => {
   const val = parseFloat($('#budget-input').value) || 0;
   if (val > 0) {
     budgetState.budget_start = new Date().toISOString().slice(0, 10);
     budgetState.spent = 0;
     saveBudget(val);
+    await loadExpenses();
     toast('تم حفظ الميزانية: ' + fmtMoney(val), 'success');
   } else {
     saveBudget(0);
@@ -1310,13 +1322,14 @@ $('#budget-save').addEventListener('click', () => {
   }
 });
 
-$('#budget-clear').addEventListener('click', () => {
+$('#budget-clear').addEventListener('click', async () => {
   if (!currentBudget || currentBudget <= 0) return;
   if (!confirm('هل أنت متأكد من مسح الميزانية؟')) return;
   $('#budget-input').value = '';
   budgetState.spent = 0;
   budgetState.budget_start = '';
   saveBudget(0);
+  await loadExpenses();
   toast('تم مسح الميزانية');
 });
 
